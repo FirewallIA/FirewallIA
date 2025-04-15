@@ -14,4 +14,4 @@ which = { version = "7.0.0", default-features = false }
 
 [[bin]]
 name = "xdp-log"
-path = "src/main.rs
+path = "src/main.rs"

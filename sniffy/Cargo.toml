@@ -1,11 +1,12 @@
 [package]
 name = "sniffy"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-aya-ebpf = "0.1.0"
-aya-log-ebpf = "0.1.0"
-firewall-001-common = { path = "../firewall-001-common" }
-network-types = "0.0.5"
+aya = "0.13"   # Pour la bibliothèque Aya, qui inclut les fonctionnalités pour manipuler eBPF et Cgroups
+tokio = { version = "1", features = ["full"] }  # Si tu souhaites utiliser des tâches asynchrones ou une gestion d'événements asynchrone
+
+# Pour la compatibilité avec les systèmes de fichiers et autres fonctionnalités
+std = ["fs", "io"]
 

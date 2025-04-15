@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-aya = "0.13"  # Vérifie les dernières versions de Aya
-tokio = { version = "1", features = ["full"] }
+aya-ebpf = "0.1.0"
+aya-log-ebpf = "0.1.0"
+firewall-001-common = { path = "../firewall-001-common" }
+network-types = "0.0.5"
 

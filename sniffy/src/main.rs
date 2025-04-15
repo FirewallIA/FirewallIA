@@ -1,33 +1,17 @@
-use aya::{Ebpf, programs::Xdp};
-use aya::programs::XdpAttachType;
-use std::path::Path;
+use std::fs::File;
+use aya::Ebpf;
+use aya::programs::{CgroupSkb, CgroupSkbAttachType, CgroupAttachMode};
 
-fn main() {
-    // Charger un programme eBPF depuis un fichier (un fichier pré-compilé .o)
-    let ebpf = Ebpf::load_file("my_program.o").expect("Failed to load eBPF program");
+// load the BPF code
+let mut ebpf = Ebpf::load_file("ebpf.o")?;
 
-    // Attacher le programme XDP à une interface réseau via un fichier "pin"
-    let interface = "enp0s8"; // Remplace avec l'interface que tu souhaites surveiller
-    let xdp_program = Xdp::from_pin(Path::new(&interface), XdpAttachType::XdpDrop).expect("Failed to convert to XDP");
+// get the `ingress_filter` program compiled into `ebpf.o`.
+let ingress: &mut CgroupSkb = ebpf.program_mut("ingress_filter")?.try_into()?;
 
-    // Attacher le programme XDP à l'interface
-    xdp_program.attach().expect("Failed to attach XDP program");
+// load the program into the kernel
+ingress.load()?;
 
-    // Boucle pour surveiller les paquets
-    loop {
-        // Si tu veux bloquer certains paquets, fais ici des vérifications
-        // Exemple : Bloquer les paquets ICMP (protocole 1)
-        if xdp_program.process_packet(|packet| {
-            if packet.ip_protocol() == 1 {
-                // Bloquer le paquet ICMP
-                return XdpAction::Drop;
-            }
-            // Laisser passer les autres paquets
-            XdpAction::Pass
-        }).is_err() {
-            println!("Error while processing packet");
-        }
-    }
-}
-
-
+// attach the program to the root cgroup. `ingress_filter` will be called for all
+// incoming packets.
+let cgroup = File::open("/sys/fs/cgroup/unified")?;
+ingress.attach(cgroup, CgroupSkbAttachType::Ingress, CgroupAttachMode::AllowOverride)?;

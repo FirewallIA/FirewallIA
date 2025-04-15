@@ -7,6 +7,5 @@ edition = "2021"
 aya = "0.13"   # Pour la bibliothèque Aya, qui inclut les fonctionnalités pour manipuler eBPF et Cgroups
 tokio = { version = "1", features = ["full"] }  # Si tu souhaites utiliser des tâches asynchrones ou une gestion d'événements asynchrone
 
-# Pour la compatibilité avec les systèmes de fichiers et autres fonctionnalités
-std = ["fs", "io"]
+
 

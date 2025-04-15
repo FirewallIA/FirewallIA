@@ -1,17 +1,21 @@
+use aya::{Ebpf, programs::{CgroupSkb, CgroupSkbAttachType, CgroupAttachMode}};
 use std::fs::File;
-use aya::Ebpf;
-use aya::programs::{CgroupSkb, CgroupSkbAttachType, CgroupAttachMode};
 
-// load the BPF code
-let mut ebpf = Ebpf::load_file("ebpf.o")?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Charger le programme BPF à partir du fichier binaire
+    let mut ebpf = Ebpf::load_file("ebpf.o")?;
 
-// get the `ingress_filter` program compiled into `ebpf.o`.
-let ingress: &mut CgroupSkb = ebpf.program_mut("ingress_filter")?.try_into()?;
+    // Obtenir le programme `ingress_filter` du fichier binaire
+    let ingress: &mut CgroupSkb = ebpf.program_mut("ingress_filter")?.try_into()?;
 
-// load the program into the kernel
-ingress.load()?;
+    // Charger le programme dans le noyau
+    ingress.load()?;
 
-// attach the program to the root cgroup. `ingress_filter` will be called for all
-// incoming packets.
-let cgroup = File::open("/sys/fs/cgroup/unified")?;
-ingress.attach(cgroup, CgroupSkbAttachType::Ingress, CgroupAttachMode::AllowOverride)?;
+    // Attacher le programme au cgroup racine pour qu'il soit exécuté sur tous les paquets entrants
+    let cgroup = File::open("/sys/fs/cgroup/unified")?;
+    ingress.attach(cgroup, CgroupSkbAttachType::Ingress, CgroupAttachMode::AllowOverride)?;
+
+    println!("Program loaded and attached!");
+
+    Ok(())
+}

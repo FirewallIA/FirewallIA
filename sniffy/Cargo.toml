@@ -1,0 +1,9 @@
+[package]
+name = "sniffy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aya = "0.13"  # Vérifie les dernières versions de Aya
+tokio = { version = "1", features = ["full"] }
+

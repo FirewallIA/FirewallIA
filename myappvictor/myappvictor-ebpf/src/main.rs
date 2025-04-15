@@ -16,7 +16,6 @@ pub fn xdp_hello(ctx: XdpContext) -> u32 {
 unsafe fn try_xdp_hello(ctx: XdpContext) -> Result<u32, u32> {
     // 
     info!(&ctx, "received a packet");
-    println!("received a packet");
     // 
     Ok(xdp_action::XDP_PASS)
 }

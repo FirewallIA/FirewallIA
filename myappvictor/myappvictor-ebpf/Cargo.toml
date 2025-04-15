@@ -1,17 +1,17 @@
 [package]
-name = "myappvictor-ebpf"
+name = "xdp-log-ebpf"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-myappvictor-common = { path = "../myappvictor-common" }
-
-aya-ebpf = { workspace = true }
-aya-log-ebpf = { workspace = true }
+aya-ebpf = { git = "https://github.com/aya-rs/aya" }
+aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
+xdp-log-common = { path = "../xdp-log-common" }
+network-types = "0.0.7"
 
 [build-dependencies]
-which = { workspace = true }
+which = { version = "7.0.0", default-features = false }
 
 [[bin]]
-name = "myappvictor"
-path = "src/main.rs"
+name = "xdp-log"
+path = "src/main.rs

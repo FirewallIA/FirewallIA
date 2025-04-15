@@ -6,7 +6,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut ebpf = Ebpf::load_file("ebpf.o")?;
 
     // Obtenir le programme `ingress_filter` du fichier binaire
-    let ingress: &mut CgroupSkb = ebpf.program_mut("ingress_filter")?.try_into()?;
+    let ingress: &mut CgroupSkb = ebpf
+        .program_mut("ingress_filter")
+        .ok_or("Program not found")? // Conversion de l'Option en Result
+        .try_into()?;
 
     // Charger le programme dans le noyau
     ingress.load()?;

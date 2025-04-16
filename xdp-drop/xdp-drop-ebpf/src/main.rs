@@ -1,8 +1,6 @@
 #![no_std]
 #![no_main]
 #![allow(nonstandard_style, dead_code)]
-#[derive(Clone, Copy)]
-#[repr(C)]
 
 use aya_ebpf::{
     bindings::xdp_action,
@@ -11,8 +9,6 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::info;
-use std::net::Ipv4Addr;
-
 use core::{mem, hash::{Hash, Hasher}};
 use network_types::{
     eth::{EthHdr, EtherType},
@@ -21,14 +17,13 @@ use network_types::{
     udp::UdpHdr,
 };
 
-// Struct clé IP + Port (Doit être `Pod + Eq + Hash`)
-
+#[repr(C)]
+#[derive(Clone, Copy)]
 pub struct IpPortKey {
     pub ip: u32,
     pub port: u16,
 }
 
-// Implémenter Eq et Hash manuellement car pas de std
 impl PartialEq for IpPortKey {
     fn eq(&self, other: &Self) -> bool {
         self.ip == other.ip && self.port == other.port

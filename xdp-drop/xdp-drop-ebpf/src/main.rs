@@ -74,12 +74,12 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
 let dest_port;
 
     match protocol {
-        6 => { // TCP
+        IpProto::Tcp  => { // TCP
             let tcphdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
             source_port = u16::from_be(unsafe { (*tcphdr).source });
             dest_port = u16::from_be(unsafe { (*tcphdr).dest });
         }
-        17 => { // UDP
+        IpProto::Udp => { // UDP
             let udphdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
             source_port = u16::from_be(unsafe { (*udphdr).source });
             dest_port = u16::from_be(unsafe { (*udphdr).dest });

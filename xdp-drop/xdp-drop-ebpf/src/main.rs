@@ -14,6 +14,8 @@ use core::mem;
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::Ipv4Hdr,
+    tcp::TcpHdr,
+    udp::UdpHdr,
 };
 
 #[cfg(not(test))]
@@ -61,10 +63,33 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     }
 
     let ipv4hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
+    
+    let protocol = unsafe { (*ipv4hdr).proto };
+    let transport_offset = EthHdr::LEN + ((*ipv4hdr).ihl() as usize * 4);
+
     let source = u32::from_be(unsafe { (*ipv4hdr).src_addr });
     let destination = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
 
+    let source_port;
+let dest_port;
 
+    match protocol {
+        6 => { // TCP
+            let tcphdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
+            source_port = u16::from_be(unsafe { (*tcphdr).source });
+            dest_port = u16::from_be(unsafe { (*tcphdr).dest });
+        }
+        17 => { // UDP
+            let udphdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
+            source_port = u16::from_be(unsafe { (*udphdr).source });
+            dest_port = u16::from_be(unsafe { (*udphdr).dest });
+        }
+        _ => {
+            source_port = 0;
+            dest_port = 0;
+        }
+    }
+ 
     // (3)
     let action = if block_ip(source) {
         xdp_action::XDP_DROP
@@ -77,7 +102,15 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     _ => "Unknown",
     };
 
-    info!(&ctx, "IP SRC: {:i}, IP DST: {:i}, ACTION: {}", source, destination, action_str);
+    info!(
+        &ctx,
+        "IP SRC: {:i}:{}, DST: {:i}:{}, ACTION: {}",
+        source,
+        source_port,
+        destination,
+        dest_port,
+        action_str
+    );
 
    
 

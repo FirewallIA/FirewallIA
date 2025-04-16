@@ -22,7 +22,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
     match try_xdp_firewall(ctx) {
         Ok(ret) => ret,
-        Err(_) => xdp_action::XDP_ABORTED,
+        Err(_) => xdp_action::XDP_PASS, // XDP_ABORTED
     }
 }
 

@@ -5,6 +5,9 @@ members = [
     "myappvictor-ebpf",
     "myappvictor-common", # Si vous ajoutez un crate commun
 ]
+resolver = "2"
+
+default-members = ["myappvictor", "myappvictor-common"]
 
 [profile.release.package.myappvictor-ebpf]
 debug = 2

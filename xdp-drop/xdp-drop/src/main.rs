@@ -15,6 +15,13 @@ struct Opt {
     iface: String,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct IpPortKey {
+    pub ip: u32,
+    pub port: u16,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
@@ -35,18 +42,13 @@ async fn main() -> Result<(), anyhow::Error> {
     program.attach(&opt.iface, XdpFlags::default())
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
 
-    // IP blocklist
-    let mut blocklist: HashMap<_, u32, u32> =
-        HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
-    let key = IpPortKey { ip: ip_addr_be, port: port };
+    // IP + port à bloquer
+    let ip: Ipv4Addr = "192.168.1.10".parse().unwrap();
+    let ip_addr_be = u32::from(ip).to_be();
+    let port: u16 = 80;
+
+    let key = IpPortKey { ip: ip_addr_be, port };
     blocklist.insert(&key, &1, 0)?;
-
-    // Port blocklist
-    let mut blocked_ports: HashMap<_, u16, u32> =
-        HashMap::try_from(bpf.map_mut("BLOCKED_PORTS").unwrap())?;
-    let block_port: u16 = 22; // SSH
-    blocked_ports.insert(block_port, 0, 0)?;
-
     
 
     info!("Waiting for Ctrl-C...");

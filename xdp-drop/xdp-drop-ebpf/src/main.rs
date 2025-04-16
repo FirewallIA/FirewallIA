@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 #![allow(nonstandard_style, dead_code)]
+#[derive(Clone, Copy)]
+#[repr(C)]
 
 use aya_ebpf::{
     bindings::xdp_action,
@@ -9,6 +11,7 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::info;
+use std::net::Ipv4Addr;
 
 use core::{mem, hash::{Hash, Hasher}};
 use network_types::{
@@ -19,8 +22,7 @@ use network_types::{
 };
 
 // Struct clé IP + Port (Doit être `Pod + Eq + Hash`)
-#[derive(Clone, Copy)]
-#[repr(C)]
+
 pub struct IpPortKey {
     pub ip: u32,
     pub port: u16,

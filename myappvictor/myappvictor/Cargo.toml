@@ -36,7 +36,7 @@ anyhow = "1"
 # Finally note that *any* usage of `artifact = ...` in *any* Cargo.toml in the workspace breaks
 # workflows with stable cargo; stable cargo outright refuses to load manifests that use unstable
 # features.
-xdp-drop-ebpf = { path = "../myappvictor-ebpf" }
+myappvictor-ebpf = { path = "../myappvictor-ebpf" }
 
 [[bin]]
 name = "myappvictor"

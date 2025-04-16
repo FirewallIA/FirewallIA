@@ -25,9 +25,13 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[map] // (1)
+#[map]
 static BLOCKLIST: HashMap<u32, u32> =
     HashMap::<u32, u32>::with_max_entries(1024, 0);
+
+#[map]
+static BLOCKED_PORTS: HashMap<u16, u32> =
+    HashMap::<u16, u32>::with_max_entries(1024, 0);
 
 #[xdp]
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
@@ -51,9 +55,12 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     Ok(&*ptr)
 }
 
-// (2)
 fn block_ip(address: u32) -> bool {
     unsafe { BLOCKLIST.get(&address).is_some() }
+}
+
+fn block_port(port: u16) -> bool {
+    unsafe { BLOCKED_PORTS.get(&port).is_some() }
 }
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
@@ -72,15 +79,15 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let destination = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
 
     let source_port;
-let dest_port;
+    let dest_port;
 
     match protocol {
-        IpProto::Tcp  => { // TCP
+        IpProto::Tcp  => {
             let tcphdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
             source_port = u16::from_be(unsafe { (*tcphdr).source });
             dest_port = u16::from_be(unsafe { (*tcphdr).dest });
         }
-        IpProto::Udp => { // UDP
+        IpProto::Udp => {
             let udphdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
             source_port = u16::from_be(unsafe { (*udphdr).source });
             dest_port = u16::from_be(unsafe { (*udphdr).dest });
@@ -91,16 +98,16 @@ let dest_port;
         }
     }
  
-    // (3)
-    let action = if block_ip(source) {
+    let action = if block_ip(source) || block_port(dest_port) {
         xdp_action::XDP_DROP
     } else {
         xdp_action::XDP_PASS
     };
+
     let action_str = match action {
-    1 => "Block",
-    2 => "Pass",
-    _ => "Unknown",
+        1 => "Block",
+        2 => "Pass",
+        _ => "Unknown",
     };
 
     info!(
@@ -112,8 +119,6 @@ let dest_port;
         dest_port,
         action_str
     );
-
-   
 
     Ok(action)
 }

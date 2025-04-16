@@ -3,7 +3,7 @@
 members = [
     "myappvictor",
     "myappvictor-ebpf",
-    # "myappvictor-common", # Si vous ajoutez un crate commun
+    "myappvictor-common", # Si vous ajoutez un crate commun
 ]
 
 [profile.release.package.myappvictor-ebpf]

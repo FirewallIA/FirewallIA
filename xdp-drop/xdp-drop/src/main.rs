@@ -8,6 +8,7 @@ use clap::Parser;
 use log::{info, warn};
 use std::net::Ipv4Addr;
 use tokio::signal;
+use bytemuck::{Pod, Zeroable};
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -16,7 +17,7 @@ struct Opt {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
 pub struct IpPortKey {
     pub ip: u32,
     pub port: u16,

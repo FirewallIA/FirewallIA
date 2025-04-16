@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 aya-ebpf = { git = "https://github.com/aya-rs/aya" }
 aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
-xdp-drop-common = { path = "../xdp-drop-common" }
+myappvictor-common = { path = "../myappvictor-common" }
 network-types = "0.0.7"
 
 [build-dependencies]

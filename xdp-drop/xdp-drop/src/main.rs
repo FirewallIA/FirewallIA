@@ -15,14 +15,16 @@ struct Opt {
     iface: String,
 }
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Zeroable, Pod)]
-pub struct IpPortKey {
-    pub ip: u32,
-    pub port: u16,
+fn validate_args(opt: &Opt) {
+    if opt.iface.is_none() {
+        let mut cmd = Opt::command();
+        eprintln!("Erreur : l'interface réseau est requise.\n");
+        cmd.print_help().unwrap();
+        std::process::exit(1);
+    }
 }
 
-unsafe impl Pod for IpPortKey {}
+//  RUST_LOG=info cargo run -- -i enp0s1
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

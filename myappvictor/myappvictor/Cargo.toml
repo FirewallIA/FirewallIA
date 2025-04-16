@@ -5,7 +5,7 @@ edition = "2021"
 
 license.workspace = true
 
-build = "build.rs"
+#build = "build.rs"
 
 [dependencies]
 myappvictor-common = { path = "../myappvictor-common", features = ["user"] }

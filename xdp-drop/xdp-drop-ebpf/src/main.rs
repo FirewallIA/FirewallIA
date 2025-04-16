@@ -14,6 +14,7 @@ use core::mem;
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::Ipv4Hdr,
+    ip::IpProto,
     tcp::TcpHdr,
     udp::UdpHdr,
 };

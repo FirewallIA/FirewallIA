@@ -1,14 +1,18 @@
-use anyhow::{anyhow, Context as _};
-use aya_build::cargo_metadata;
+use std::{
+    env,
+    fs,
+    path::PathBuf,
+};
 
-fn main() -> anyhow::Result<()> {
-    let cargo_metadata::Metadata { packages, .. } = cargo_metadata::MetadataCommand::new()
-        .no_deps()
-        .exec()
-        .context("MetadataCommand::exec")?;
-    let ebpf_package = packages
-        .into_iter()
-        .find(|cargo_metadata::Package { name, .. }| name == "myappvictor-ebpf")
-        .ok_or_else(|| anyhow!("myappvictor-ebpf package not found"))?;
-    aya_build::build_ebpf([ebpf_package])
+fn main() {
+    // Chemin vers le .o généré par le projet eBPF
+    let src = PathBuf::from("../myappvictor-ebpf/target/bpfel-unknown-none/release/myappvictor-ebpf");
+
+    // Dossier OUT_DIR de ce crate
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+    // Chemin de destination du binaire eBPF
+    let dst = out_dir.join("myappvictor");
+
+    fs::copy(&src, &dst).expect("Failed to copy eBPF program");
 }

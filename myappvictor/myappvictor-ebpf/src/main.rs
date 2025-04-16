@@ -43,7 +43,6 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     if start + offset + len > end {
         return Err(());
     }
-
     let ptr = (start + offset) as *const T;
     Ok(&*ptr)
 }

@@ -4,51 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aya-ebpf = { git = "https://github.com/aya-rs/aya", branch = "main"} # Ou une version spécifique
-aya-log-ebpf = { git = "https://github.com/aya-rs/aya", branch = "main"} # Ou une version spécifique
-network-types = "0.7" # Vérifiez la dernière version compatible
-myappvictor-common = { path = "../myappvictor-common", optional = true } # Si vous avez un crate commun
+aya-ebpf = { git = "https://github.com/aya-rs/aya" }
+aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
+xdp-drop-common = { path = "../xdp-drop-common" }
+network-types = "0.0.7"
 
-# Dépendance nécessaire pour no_std
-# La version doit correspondre à celle utilisée par Rust pour votre cible BPF
-# Souvent géré par les build flags, mais peut être explicitement listé si nécessaire.
-# core = { version = "1.0.0", package = "core" } # Généralement pas nécessaire explicitement ici
+[build-dependencies]
+which = { version = "7.0.0", default-features = false }
 
-[features]
-default = []
-# Activer les macros de log par défaut si utilisées partout
-# default = ["aya-log-ebpf/macros"]
-
-[lib]
-# Ce crate n'est pas une lib Rust standard, mais sera compilé en eBPF
-# Pas besoin de spécifier crate-type habituellement, car la compilation BPF le gère.
-
-# [[bin]] # Définir comme bin si compilé directement avec `cargo build --target=bpf...`
-# name = "xdp-drop" # Le nom de sortie attendu par le loader user-space
-# path = "src/main.rs"
-
-[profile.dev]
-opt-level = 3
-debug = false
-debug-assertions = false
-overflow-checks = false
-lto = true
-panic = "abort"
-incremental = false
-codegen-units = 1
-rpath = false
-
-[profile.release]
-opt-level = 3 # Optimisation pour la performance/taille
-debug = false # Pas d'info de debug dans le binaire final
-debug-assertions = false
-overflow-checks = false
-lto = true # Link Time Optimization
-panic = "abort" # Le panic doit être abort dans eBPF
-incremental = false
-codegen-units = 1 # Important pour la taille du code
-rpath = false
-strip = "symbols" # Réduit la taille en enlevant les symboles
-
-[workspace]
-# Optionnel, si vous avez un workspace à la racine
+[[bin]]
+name = "xdp-drop"
+path = "src/main.rs"

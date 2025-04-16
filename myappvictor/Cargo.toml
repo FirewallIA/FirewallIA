@@ -6,6 +6,6 @@ members = [
     # "myappvictor-common", # Si vous ajoutez un crate commun
 ]
 
-# Vous pouvez définir des dépendances ou profils partagés ici si nécessaire
-# [profile.release]
-# ...
+[profile.release.package.myappvictor-ebpf]
+debug = 2
+codegen-units = 1

@@ -8,7 +8,6 @@ use clap::Parser;
 use log::{info, warn};
 use std::net::Ipv4Addr;
 use tokio::signal;
-use bytemuck::{Pod, Zeroable};
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -22,6 +21,8 @@ pub struct IpPortKey {
     pub ip: u32,
     pub port: u16,
 }
+
+unsafe impl Pod for IpPortKey {}
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

@@ -12,6 +12,13 @@ network-types = "0.0.7"
 [build-dependencies]
 which = { version = "7.0.0", default-features = false }
 
+[build]
+
+target = "bpfel-unknown-none" 
+
+[unstable]
+build-std = ["core"]
+
 [[bin]]
 name = "xdp-log"
 path = "src/main.rs"

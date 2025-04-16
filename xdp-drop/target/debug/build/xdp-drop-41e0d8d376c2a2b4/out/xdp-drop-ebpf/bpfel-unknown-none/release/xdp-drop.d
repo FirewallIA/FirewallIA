@@ -1,0 +1,1 @@
+/root/FirewallIA/xdp-drop/target/debug/build/xdp-drop-41e0d8d376c2a2b4/out/xdp-drop-ebpf/bpfel-unknown-none/release/xdp-drop: /root/.cargo/bin/bpf-linker /root/FirewallIA/xdp-drop/xdp-drop-common/src/lib.rs /root/FirewallIA/xdp-drop/xdp-drop-ebpf/build.rs /root/FirewallIA/xdp-drop/xdp-drop-ebpf/src/main.rs

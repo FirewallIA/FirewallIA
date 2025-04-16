@@ -1,0 +1,1 @@
+cargo:rerun-if-changed=/root/.cargo/bin/bpf-linker

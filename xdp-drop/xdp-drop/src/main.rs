@@ -38,14 +38,16 @@ async fn main() -> Result<(), anyhow::Error> {
     // IP blocklist
     let mut blocklist: HashMap<_, u32, u32> =
         HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
-    let block_addr: u32 = Ipv4Addr::new(192, 168, 1, 100).into();
-    blocklist.insert(block_addr, 0, 0)?;
+    let key = IpPortKey { ip: ip_addr_be, port: port };
+    blocklist.insert(&key, &1, 0)?;
 
     // Port blocklist
     let mut blocked_ports: HashMap<_, u16, u32> =
         HashMap::try_from(bpf.map_mut("BLOCKED_PORTS").unwrap())?;
     let block_port: u16 = 22; // SSH
     blocked_ports.insert(block_port, 0, 0)?;
+
+    
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;

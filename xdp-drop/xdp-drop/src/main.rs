@@ -11,7 +11,7 @@ use tokio::signal;
 
 #[derive(Debug, Parser)]
 struct Opt {
-    #[clap(short, long, default_value = "enp0s1")]
+    #[clap(short, long, default_value = "enp0s8")]
     iface: String,
 }
 
@@ -44,7 +44,7 @@ async fn main() -> Result<(), anyhow::Error> {
         HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
 
     // (2)
-    let block_addr: u32 = Ipv4Addr::new(1, 1, 1, 1).into();
+    let block_addr: u32 = Ipv4Addr::new(192, 168, 1, 100).into();
 
     // (3)
     blocklist.insert(block_addr, 0, 0)?;

@@ -1,0 +1,1 @@
+{"rustc":14553892650732070633,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[12925769614641394884,"build_script_build",false,1561607728586124579],[9569273703937317868,"build_script_build",false,5431957843925686789]],"local":[{"RerunIfEnvChanged":{"var":"CARGO_CFG_BPF_TARGET_ARCH","val":"x86_64"}}],"rustflags":[],"config":0,"compile_kind":0}

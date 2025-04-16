@@ -11,7 +11,7 @@ use tokio::signal;
 
 #[derive(Debug, Parser)]
 struct Opt {
-    #[clap(short, long, default_value = "eth0")]
+    #[clap(short, long, default_value = "enp0s8")]
     iface: String,
 }
 

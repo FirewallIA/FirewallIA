@@ -39,5 +39,5 @@ anyhow = "1"
 myappvictor-ebpf = { path = "../myappvictor-ebpf" }
 
 [[bin]]
-name = "myappvictor"
+name = "xdp-drop"
 path = "src/main.rs"

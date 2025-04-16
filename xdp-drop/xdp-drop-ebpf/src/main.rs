@@ -62,6 +62,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
 
     let ipv4hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
     let source = u32::from_be(unsafe { (*ipv4hdr).src_addr });
+    let destination = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
+
 
     // (3)
     let action = if block_ip(source) {
@@ -75,7 +77,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     _ => "Unknown",
     };
 
-    info!(&ctx, "SRC: {:i}, ACTION: {}", source, action_str);   
+    info!(&ctx, "IP SRC: {:i}, IP DST: {:i}, ACTION: {}", source, destination, action_str);
+
    
 
     Ok(action)

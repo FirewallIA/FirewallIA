@@ -119,7 +119,7 @@ let dest_port;
     }
  
     // (3)
-    let action = if block_ip_port(ctx, source, source_port) {
+    let action = if block_ip_port(&ctx, source, source_port) {
         xdp_action::XDP_DROP
     } else {
         xdp_action::XDP_PASS

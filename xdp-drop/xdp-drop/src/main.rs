@@ -53,19 +53,6 @@ async fn main() -> Result<(), anyhow::Error> {
         _pad: 0,
     };
     blocklist.insert(key, 1, 0)?;
- //   println!("INSERT: IP {}, PORT {}", key.addr, key.port);
-
- //   match blocklist.get(&key, 0) {
- //       Ok(val) => {
-  //          println!("✅ Found in blocklist with value: {:?}", val);
- //       }
- //       Err(aya::maps::MapError::KeyNotFound) => {
- //           println!("❌ Key not found in blocklist");
- //       }
- //       Err(e) => {
- //           println!("🔥 Error accessing blocklist: {}", e);
- //       }
- //   }
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;

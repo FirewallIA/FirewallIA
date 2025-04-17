@@ -48,8 +48,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
 
     // IP + port à bloquer
-    let mut blocklist: HashMap<_, IpPortKey, u32> =
-        HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
+    let mut blocklist: HashMap<_, u32, u32> =
+    HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
 
     let ip: Ipv4Addr = "192.168.1.10".parse().unwrap();
     let ip_addr_be = u32::from(ip).to_be();

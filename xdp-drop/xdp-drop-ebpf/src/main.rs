@@ -34,6 +34,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 pub struct IpPort {
     pub addr: u32,
     pub port: u16,
+    pub _pad: u16,
 }
 
 

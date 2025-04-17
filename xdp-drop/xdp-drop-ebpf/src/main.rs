@@ -64,13 +64,24 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
 }
 
 // (2)
-fn block_ip_port(addr: u32, port: u16) -> bool {
-    let key = IpPort {
-        addr,
-        port,
-    };
-    unsafe { BLOCKLIST.get(&key).is_some() }
+fn block_ip_port(ctx: &XdpContext, addr: u32, port: u16) -> bool {
+    let key = IpPort { addr, port };
+
+    let is_blocked = unsafe { BLOCKLIST.get(&key).is_some() };
+
+    let ip_be = addr.to_be_bytes(); // pour affichage plus clair
+
+    let status = if is_blocked { "BLOCKED" } else { "ALLOWED" };
+
+    info!(
+        ctx,
+        ">> Check IpPort - IP: {}.{}.{}.{} Port: {} => {}",
+        ip_be[0], ip_be[1], ip_be[2], ip_be[3], port, status
+    );
+
+    is_blocked
 }
+
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let ethhdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };

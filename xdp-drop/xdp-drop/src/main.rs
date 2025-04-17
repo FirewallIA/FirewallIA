@@ -60,7 +60,7 @@ async fn main() -> Result<(), anyhow::Error> {
     blocklist.insert(key, 1, 0)?;
 
     // Créer ou ouvrir un fichier de log
-    let log_file = File::create("firewall_log.txt").unwrap();
+    let log_file = File::create("/var/log/firewall_log.txt").unwrap();
 
     // Rediriger les logs vers le fichier
     let log_file = io::BufWriter::new(log_file);

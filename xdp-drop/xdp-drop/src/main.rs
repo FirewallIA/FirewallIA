@@ -55,10 +55,10 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("INSERT: IP {}, PORT {}", key.addr, key.port);
 
     match blocklist.get(&key, 0) {
-        Ok(Some(val)) => {
-            println!("✅ Found value in blocklist: {:?}", val);
+        Ok(val) => {
+            println!("✅ Found in blocklist with value: {:?}", val);
         }
-        Ok(None) => {
+        Err(aya::maps::MapError::KeyNotFound) => {
             println!("❌ Key not found in blocklist");
         }
         Err(e) => {

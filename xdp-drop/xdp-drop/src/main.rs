@@ -9,7 +9,7 @@ use log::{info, warn};
 use std::net::Ipv4Addr;
 use tokio::signal;
 
-se aya::maps::HashMap;
+use aya::maps::HashMap;
 use aya::util::online_cpus;
 use xdp-drop::IpPort; // bien sûr il faut que la struct soit partagée avec le user
 

@@ -66,7 +66,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
       // 🐘 Connexion à la base PostgreSQL
       let (client, connection) = tokio_postgres::connect(
-        "host=localhost user=postgres dbname=firewall",
+        "host=localhost user=postgres password=postgres dbname=firewall",
         tokio_postgres::NoTls,
     )
     .await

@@ -66,7 +66,7 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
 
 // (2)
 fn block_ip_port(ctx: &XdpContext, addr: u32, port: u16) -> bool {
-    let key = IpPort { addr, port, _pad };
+    let key = IpPort { addr, port, 0 };
 
     let is_blocked = unsafe { BLOCKLIST.get(&key).is_some() };
 

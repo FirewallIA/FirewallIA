@@ -25,9 +25,24 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[map] // (1)
-static BLOCKLIST: HashMap<u32, u32> =
-    HashMap::<u32, u32>::with_max_entries(1024, 0);
+//#[map] // (1)
+//static BLOCKLIST: HashMap<u32, u32> =
+//    HashMap::<u32, u32>::with_max_entries(1024, 0);
+
+// Hashmap pour ip et port 
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IpPort {
+    pub ip: u32,
+    pub port: u16,
+    pub _pad: u16, // padding to align to 8 bytes total (needed for HashMap keys)
+}
+
+unsafe impl aya_ebpf::Pod for IpPort {}
+
+
+#[map]
+static BLOCKLIST: HashMap<IpPort, u32> = HashMap::<IpPort, u32>::with_max_entries(1024, 0);
 
 #[xdp]
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
@@ -52,8 +67,13 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
 }
 
 // (2)
-fn block_ip(address: u32) -> bool {
-    unsafe { BLOCKLIST.get(&address).is_some() }
+fn block_ip_port(ip: u32, port: u16) -> bool {
+    let key = IpPort {
+        ip,
+        port,
+        _pad: 0,
+    };
+    unsafe { BLOCKLIST.get(&key).is_some() }
 }
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
@@ -92,7 +112,7 @@ let dest_port;
     }
  
     // (3)
-    let action = if block_ip(source) {
+    let action = if block_ip_port(source, source_port) {
         xdp_action::XDP_DROP
     } else {
         xdp_action::XDP_PASS

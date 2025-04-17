@@ -9,6 +9,11 @@ use log::{info, warn};
 use std::net::Ipv4Addr;
 use tokio::signal;
 
+se aya::maps::HashMap;
+use aya::util::online_cpus;
+use xdp-drop::IpPort; // bien sûr il faut que la struct soit partagée avec le user
+
+
 #[derive(Debug, Parser)]
 struct Opt {
     #[clap(short, long, default_value = "enp0s8")]
@@ -40,15 +45,16 @@ async fn main() -> Result<(), anyhow::Error> {
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
 
     // (1)
-    let mut blocklist: HashMap<_, u32, u32> =
+    let mut blocklist: HashMap<_, IpPort, u32> =
         HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
 
-    // (2)
-    let block_addr: u32 = Ipv4Addr::new(192, 168, 1, 100).into();
-
-    // (3)
-    blocklist.insert(block_addr, 0, 0)?;
-
+    let key = IpPort {
+        ip: u32::from_be_bytes([192, 168, 0, 42]),
+        port: 1234,
+        _pad: 0,
+    };
+    blocklist.insert(key, 1, 0)?;
+    
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
     info!("Exiting...");

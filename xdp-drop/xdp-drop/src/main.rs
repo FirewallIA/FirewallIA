@@ -52,9 +52,14 @@ async fn main() -> Result<(), anyhow::Error> {
         port: 1234,
     };
     blocklist.insert(key, 1, 0)?;
-    let found = blocklist.get(&key, 0)?;
-    println!("DEBUG: Entry in BLOCKLIST: {:?}", found);
-    
+    println!("INSERT: IP {}, PORT {}", key.addr, key.port);
+
+    if let Some(val) = blocklist.get(&key, 0)? {
+        println!("FOUND entry: {:?}", val);
+    } else {
+        println!("❌ Not found in map!");
+    }
+
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
     info!("Exiting...");

@@ -26,9 +26,10 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[map] // (1)
-static BLOCKLIST: HashMap<u32, u32> =
-    HashMap::<u32, u32>::with_max_entries(1024, 0);
+// ... (imports et setup inchangés)
+
+#[map]
+static BLOCKLIST: HashMap<u32, u32> = HashMap::<u32, u32>::with_max_entries(1024, 0);
 
 #[xdp]
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
@@ -42,43 +43,18 @@ pub fn xdp_firewall(ctx: XdpContext) -> u32 {
 unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     let start = ctx.data();
     let end = ctx.data_end();
-    let len = mem::size_of::<T>();
+    let len = core::mem::size_of::<T>();
 
     if start + offset + len > end {
         return Err(());
     }
 
-    let ptr = (start + offset) as *const T;
-    Ok(&*ptr)
+    Ok((start + offset) as *const T)
 }
-
 
 fn block_ip(address: u32) -> bool {
     unsafe { BLOCKLIST.get(&address).is_some() }
 }
-
-
-// pub fn decimal_to_hex(ctx: &XdpContext, byte: u8) -> [u8; 2] {
-//     let ascii_table: [u8; 16] = [
-//         48, 49, 50, 51, 52, 53, 54, 55, 56, 57, // '0' à '9'
-//         65, 66, 67, 68, 69, 70,               // 'A' à 'F'
-//     ];
-
-
-//     let low = byte % 16;
-//     let high = byte / 16;
-//     info!(
-//         ctx,
-//         "{} -> {}={}, {}={}",
-//         byte,
-//         high,
-//         ascii_table[high as usize],
-//         low,
-//         ascii_table[low as usize], 
-//     );
-
-//     [ascii_table[high as usize], ascii_table[low as usize]]
-// }
 
 pub fn decimal_to_hex(ctx: &XdpContext, byte: u8) -> [u8; 2] {
     const HEX: [u8; 16] = *b"0123456789ABCDEF";
@@ -92,42 +68,40 @@ pub fn decimal_to_hex(ctx: &XdpContext, byte: u8) -> [u8; 2] {
         high,
         HEX[high as usize],
         low,
-        HEX[low as usize], 
+        HEX[low as usize],
     );
 
     [HEX[high as usize], HEX[low as usize]]
 }
 
+// ✅ NOUVELLE FONCTION pour formater et afficher l'adresse MAC
+pub fn format_mac(ctx: &XdpContext, mac: &[u8; 6]) {
+    let mut mac_str = [0u8; 17]; // "XX:XX:XX:XX:XX:XX"
+    let mut j = 0;
+    for (i, &byte) in mac.iter().enumerate() {
+        let hex = decimal_to_hex(ctx, byte);
+        mac_str[j] = hex[0];
+        mac_str[j + 1] = hex[1];
+        if i < 5 {
+            mac_str[j + 2] = b':';
+        }
+        j += 3;
+    }
 
-
-pub fn dump_mac_address(ctx: &XdpContext, _is_src: bool, mac: &[u8; 6]) {
-    for (_, &byte) in mac.iter().enumerate() {
-        let _hex_chars = decimal_to_hex(ctx, byte);
-
-        // Affichage sans utiliser as char, directement les valeurs hexadécimales
-        // info!(
-        //     ctx,
-        //     "Byte {}: {} => {}{}",
-        //     i,
-        //     byte,
-        //     hex_chars[0],  // Affichage du premier caractère hexadécimal
-        //     hex_chars[1]   // Affichage du second caractère hexadécimal
-        // );
+    if let Ok(mac_string) = core::str::from_utf8(&mac_str) {
+        info!(ctx, "MAC: {}", mac_string);
     }
 }
-
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let ethhdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
 
     let src_mac: [u8; 6] = unsafe { (*ethhdr).src_addr };
-    dump_mac_address(&ctx, true, &src_mac);
     let dst_mac: [u8; 6] = unsafe { (*ethhdr).dst_addr };
-    dump_mac_address(&ctx, false, &dst_mac);
 
-    // let src_mac_val = mac_to_u64(&src_mac);
-    // let dst_mac_val = mac_to_u64(&dst_mac);
-    
+    // ✅ Utilisation de la nouvelle fonction
+    format_mac(&ctx, &src_mac);
+    format_mac(&ctx, &dst_mac);
 
     match unsafe { (*ethhdr).ether_type } {
         EtherType::Ipv4 => {}
@@ -135,57 +109,52 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     }
 
     let ipv4hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
-    
+
     let protocol = unsafe { (*ipv4hdr).proto };
     let transport_offset = EthHdr::LEN + (unsafe { (*ipv4hdr).ihl() } as usize * 4);
 
     let src_addr = u32::from_be(unsafe { (*ipv4hdr).src_addr });
     let dst_addr = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
 
-    let src_port;
-    let dst_port;
-
-    match protocol {
-        IpProto::Tcp  => { // TCP
+    let (src_port, dst_port) = match protocol {
+        IpProto::Tcp => {
             let tcphdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
-            src_port = u16::from_be(unsafe { (*tcphdr).source });
-            dst_port = u16::from_be(unsafe { (*tcphdr).dest });
+            (
+                u16::from_be(unsafe { (*tcphdr).source }),
+                u16::from_be(unsafe { (*tcphdr).dest }),
+            )
         }
-        IpProto::Udp => { // UDP
+        IpProto::Udp => {
             let udphdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
-            src_port = u16::from_be(unsafe { (*udphdr).source });
-            dst_port = u16::from_be(unsafe { (*udphdr).dest });
+            (
+                u16::from_be(unsafe { (*udphdr).source }),
+                u16::from_be(unsafe { (*udphdr).dest }),
+            )
         }
-        _ => {
-            src_port = 0;
-            dst_port = 0;
-        }
-    }
+        _ => (0, 0),
+    };
 
     let action = if block_ip(src_addr) {
         xdp_action::XDP_DROP
     } else {
         xdp_action::XDP_PASS
     };
+
     let action_str = match action {
-    1 => "Block",
-    2 => "Pass",
-    _ => "Unknown",
+        1 => "Block",
+        2 => "Pass",
+        _ => "Unknown",
     };
 
     info!(
         &ctx,
-        "MAC SRC: X, IP SRC: {:i}:{} => MAC DST: X, DST: {:i}:{}, ACTION: {}",
-        // "MAC SRC: {}, IP SRC: {:i}:{} => MAC DST: {}, DST: {:i}:{}, ACTION: {}",
-        // src_mac_val,
+        "IP SRC: {:i}:{} => DST: {:i}:{}, ACTION: {}",
         src_addr,
         src_port,
-        // dst_mac_val,
         dst_addr,
         dst_port,
         action_str
     );
-   
 
     Ok(action)
 }

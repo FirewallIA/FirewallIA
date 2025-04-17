@@ -76,20 +76,28 @@ pub fn decimal_to_hex(ctx: &XdpContext, byte: u8) -> [u8; 2] {
 
 // ✅ NOUVELLE FONCTION pour formater et afficher l'adresse MAC
 pub fn format_mac(ctx: &XdpContext, mac: &[u8; 6]) {
-    let mut mac_str = [0u8; 17]; // "XX:XX:XX:XX:XX:XX"
+    let mut out = [0u8; 17]; // "XX:XX:XX:XX:XX:XX"
     let mut j = 0;
     for (i, &byte) in mac.iter().enumerate() {
         let hex = decimal_to_hex(ctx, byte);
-        mac_str[j] = hex[0];
-        mac_str[j + 1] = hex[1];
+        out[j] = hex[0];
+        out[j + 1] = hex[1];
         if i < 5 {
-            mac_str[j + 2] = b':';
+            out[j + 2] = b':';
         }
         j += 3;
     }
 
-    if let Ok(mac_string) = core::str::from_utf8(&mac_str) {
-        info!(ctx, "MAC: {}", mac_string);
+    // Log chaque octet manuellement
+    for i in 0..6 {
+        let offset = i * 3;
+        info!(
+            ctx,
+            "MAC[{}] = {}{}",
+            i,
+            out[offset] as char,
+            out[offset + 1] as char
+        );
     }
 }
 

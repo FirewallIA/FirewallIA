@@ -52,7 +52,9 @@ async fn main() -> Result<(), anyhow::Error> {
         port: 1234,
     };
     blocklist.insert(key, 1, 0)?;
-
+    let found = blocklist.get(&key, 0)?;
+    println!("DEBUG: Entry in BLOCKLIST: {:?}", found);
+    
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
     info!("Exiting...");

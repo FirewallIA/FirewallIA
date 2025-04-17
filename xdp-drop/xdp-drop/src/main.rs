@@ -12,6 +12,11 @@ use tokio::signal;
 use aya::util::online_cpus;
 use xdp_drop_common::IpPort; // bien sûr il faut que la struct soit partagée avec le user
 
+use log::{info, error, warn};
+use simple_logger::SimpleLogger;
+use std::fs::File;
+use std::io::{self, Write};
+
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -53,6 +58,20 @@ async fn main() -> Result<(), anyhow::Error> {
         _pad: 0,
     };
     blocklist.insert(key, 1, 0)?;
+
+    // Créer ou ouvrir un fichier de log
+    let log_file = File::create("firewall_log.txt").unwrap();
+
+    // Rediriger les logs vers le fichier
+    let log_file = io::BufWriter::new(log_file);
+    SimpleLogger::new()
+        .with_level(log::LevelFilter::Info)
+        .with_output(log_file)
+        .init()
+        .unwrap();
+
+    // Exemple de log
+    info!("Le firewall a démarré.");
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;

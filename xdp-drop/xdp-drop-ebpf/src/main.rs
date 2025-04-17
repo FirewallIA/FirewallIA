@@ -9,11 +9,13 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::info;
-
 use core::mem;
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::Ipv4Hdr,
+    ip::IpProto,
+    tcp::TcpHdr,
+    udp::UdpHdr,
 };
 
 #[cfg(not(test))]
@@ -22,9 +24,23 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[map] // (1)
-static BLOCKLIST: HashMap<u32, u32> =
-    HashMap::<u32, u32>::with_max_entries(1024, 0);
+//#[map] // (1)
+//static BLOCKLIST: HashMap<u32, u32> =
+//    HashMap::<u32, u32>::with_max_entries(1024, 0);
+
+// Hashmap pour ip et port 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct IpPort {
+    pub addr: u32,
+    pub port: u16,
+    pub _pad: u16,
+}
+
+
+
+#[map]
+static BLOCKLIST: HashMap<IpPort, u32> = HashMap::<IpPort, u32>::with_max_entries(1024, 0);
 
 #[xdp]
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
@@ -49,9 +65,20 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
 }
 
 // (2)
-fn block_ip(address: u32) -> bool {
-    unsafe { BLOCKLIST.get(&address).is_some() }
+fn block_ip_port(ctx: &XdpContext, addr: u32, port: u16) -> bool {
+    let key = IpPort { addr, port, _pad: 0 };
+
+    let is_blocked = unsafe { BLOCKLIST.get(&key).is_some() };
+
+    let ip_be = addr.to_be_bytes(); // pour affichage plus clair
+
+    let status = if is_blocked { "BLOCKED" } else { "ALLOWED" };
+
+    info!(ctx, "Checking IP: {}.{}.{}.{} Port: {}", ip_be[0], ip_be[1], ip_be[2], ip_be[3], port);
+
+    is_blocked
 }
+
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let ethhdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
@@ -61,15 +88,56 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     }
 
     let ipv4hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
-    let source = u32::from_be(unsafe { (*ipv4hdr).src_addr });
+    
+    let protocol = unsafe { (*ipv4hdr).proto };
+    let transport_offset = EthHdr::LEN + (unsafe { (*ipv4hdr).ihl() } as usize * 4);
 
+    let source = u32::from_be(unsafe { (*ipv4hdr).src_addr });
+    let destination = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
+
+    let source_port;
+let dest_port;
+
+    match protocol {
+        IpProto::Tcp  => { // TCP
+            let tcphdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
+            source_port = u16::from_be(unsafe { (*tcphdr).source });
+            dest_port = u16::from_be(unsafe { (*tcphdr).dest });
+        }
+        IpProto::Udp => { // UDP
+            let udphdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
+            source_port = u16::from_be(unsafe { (*udphdr).source });
+            dest_port = u16::from_be(unsafe { (*udphdr).dest });
+        }
+        _ => {
+            source_port = 0;
+            dest_port = 0;
+        }
+    }
+ 
     // (3)
-    let action = if block_ip(source) {
+    let action = if block_ip_port(&ctx, source, dest_port) {
         xdp_action::XDP_DROP
     } else {
         xdp_action::XDP_PASS
     };
-    info!(&ctx, "SRC: {:i}, ACTION: {}", source, action);
+    let action_str = match action {
+    1 => "Block",
+    2 => "Pass",
+    _ => "Unknown",
+    };
+
+    info!(
+        &ctx,
+        "IP SRC: {:i}:{}, DST: {:i}:{}, ACTION: {}",
+        source,
+        source_port,
+        destination,
+        dest_port,
+        action_str
+    );
+
+   
 
     Ok(action)
 }

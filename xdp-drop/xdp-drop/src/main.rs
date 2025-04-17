@@ -15,17 +15,6 @@ struct Opt {
     iface: String,
 }
 
-fn validate_args(opt: &Opt) {
-    if opt.iface.is_none() {
-        let mut cmd = Opt::command();
-        eprintln!("Erreur : l'interface réseau est requise.\n");
-        cmd.print_help().unwrap();
-        std::process::exit(1);
-    }
-}
-
-//  RUST_LOG=info cargo run -- -i enp0s1
-
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
@@ -36,27 +25,29 @@ async fn main() -> Result<(), anyhow::Error> {
         env!("OUT_DIR"),
         "/xdp-drop"
     )))?;
-
     if let Err(e) = EbpfLogger::init(&mut bpf) {
         warn!("failed to initialize eBPF logger: {}", e);
     }
 
-    let program: &mut Xdp = bpf.program_mut("xdp_firewall").unwrap().try_into()?;
+    let program: &mut Xdp =
+        bpf.program_mut("xdp_firewall").unwrap().try_into()?;
     program.load()?;
-    program
-        .attach(&opt.iface, XdpFlags::default())
+    program.attach(&opt.iface, XdpFlags::default())
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
 
-    // IP + port à bloquer
+    // IP blocklist
     let mut blocklist: HashMap<_, u32, u32> =
-    HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
-
-    let ip: Ipv4Addr = "192.168.1.10".parse().unwrap();
-    let ip_addr_be = u32::from(ip).to_be();
-    let port: u16 = 80;
-
-    let key = IpPortKey { ip: ip_addr_be, port };
+        HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
+    let key = IpPortKey { ip: ip_addr_be, port: port };
     blocklist.insert(&key, &1, 0)?;
+
+    // Port blocklist
+    let mut blocked_ports: HashMap<_, u16, u32> =
+        HashMap::try_from(bpf.map_mut("BLOCKED_PORTS").unwrap())?;
+    let block_port: u16 = 22; // SSH
+    blocked_ports.insert(block_port, 0, 0)?;
+
+    
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;

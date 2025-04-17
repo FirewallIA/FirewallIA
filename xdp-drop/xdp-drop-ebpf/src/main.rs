@@ -10,11 +10,35 @@ use aya_ebpf::{
 };
 use aya_log_ebpf::info;
 
-use core::mem;
+use core::{mem, hash::{Hash, Hasher}};
 use network_types::{
     eth::{EthHdr, EtherType},
-    ip::Ipv4Hdr,
+    ip::{Ipv4Hdr, IpProto},
+    tcp::TcpHdr,
+    udp::UdpHdr,
 };
+
+// Struct clé IP + Port (Doit être `Pod + Eq + Hash`)
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct IpPortKey {
+    pub ip: u32,
+    pub port: u16,
+}
+
+// Implémenter Eq et Hash manuellement car pas de std
+impl PartialEq for IpPortKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.ip == other.ip && self.port == other.port
+    }
+}
+impl Eq for IpPortKey {}
+impl core::hash::Hash for IpPortKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.ip.hash(state);
+        self.port.hash(state);
+    }
+}
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -22,9 +46,8 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[map] // (1)
-static BLOCKLIST: HashMap<u32, u32> =
-    HashMap::<u32, u32>::with_max_entries(1024, 0);
+#[map]
+static BLOCKLIST: HashMap<IpPortKey, u32> = HashMap::<IpPortKey, u32>::with_max_entries(1024, 0);
 
 #[xdp]
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
@@ -48,9 +71,9 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     Ok(&*ptr)
 }
 
-// (2)
-fn block_ip(address: u32) -> bool {
-    unsafe { BLOCKLIST.get(&address).is_some() }
+fn block_ip_port(ip: u32, port: u16) -> bool {
+    let key = IpPortKey { ip, port };
+    unsafe { BLOCKLIST.get(&key).is_some() }
 }
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {

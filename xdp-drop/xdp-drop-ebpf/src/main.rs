@@ -30,7 +30,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 
 // Hashmap pour ip et port 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy)]
 pub struct IpPort {
     pub addr: u32,
     pub port: u16,

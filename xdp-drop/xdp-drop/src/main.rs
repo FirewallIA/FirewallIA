@@ -4,20 +4,33 @@ use aya::{
     programs::{Xdp, XdpFlags},
 };
 use aya_log::EbpfLogger;
-use clap::Parser;
+use clap::{Parser, CommandFactory};
 use log::{info, warn};
 use std::net::Ipv4Addr;
 use tokio::signal;
 
 #[derive(Debug, Parser)]
 struct Opt {
-    #[clap(short, long, default_value = "enp0s8")]
+    #[clap(short = 'i', long = "int")]
     iface: String,
 }
+
+
+fn validate_args(opt: &Opt) {
+    if opt.iface.trim().is_empty() {
+        let mut cmd = Opt::command();
+        eprintln!("Erreur : l'interface réseau est requise.\n");
+        cmd.print_help().unwrap();
+        std::process::exit(1);
+    }
+}
+
+//  RUST_LOG=info cargo run -- -i enp0s1
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
+    validate_args(&opt);
 
     env_logger::init();
 
@@ -37,7 +50,7 @@ async fn main() -> Result<(), anyhow::Error> {
         bpf.program_mut("xdp_firewall").unwrap().try_into()?;
     program.load()?;
     program.attach(&opt.iface, XdpFlags::default())
-        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
+        .context("failed to attach the XDP program with default flags")?;
 
     // (1)
     let mut blocklist: HashMap<_, u32, u32> =

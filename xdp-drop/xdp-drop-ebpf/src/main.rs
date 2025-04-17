@@ -88,11 +88,12 @@ pub fn format_mac(ctx: &XdpContext, mac: &[u8; 6]) {
         j += 3;
     }
 
-    // Affichage des octets en hexadécimal sans `{:?}`
+    // Utilisation de la macro info! pour afficher les octets sous forme hexadécimale
+    // sans conversion en UTF-8
     info!(
         ctx,
-        "MAC = {}",
-        core::str::from_utf8(&mac_str).unwrap_or("Invalid UTF-8")
+        "MAC = {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
 }
 

@@ -7,7 +7,6 @@ use aya_ebpf::{
     macros::{map, xdp},
     maps::HashMap,
     programs::XdpContext,
-    Pod,
 };
 use aya_log_ebpf::info;
 use core::mem;
@@ -38,7 +37,6 @@ pub struct IpPort {
     pub _pad: u16, // padding to align to 8 bytes total (needed for HashMap keys)
 }
 
-unsafe impl aya_ebpf::Pod for IpPort {}
 
 
 #[map]

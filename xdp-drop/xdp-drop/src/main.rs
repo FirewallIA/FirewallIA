@@ -64,6 +64,51 @@ async fn main() -> Result<(), anyhow::Error> {
     info!("🔥 Le firewall est en marche !");
     info!("⏳ Appuyez sur Ctrl-C pour arrêter...");
 
+      // 🐘 Connexion à la base PostgreSQL
+      let (client, connection) = tokio_postgres::connect(
+        "host=localhost user=postgres password=postgres dbname=firewall",
+        tokio_postgres::NoTls,
+    )
+    .await
+    .context("Erreur de connexion à PostgreSQL")?;
+
+    // 🧵 Exécuter la connexion en tâche asynchrone
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("Erreur de connexion PostgreSQL : {}", e);
+        }
+    });
+
+    // 🗂️ Sélection des règles depuis la table
+    let rows = client
+        .query("SELECT id, source_ip, dest_ip, source_port, dest_port, action, protocol, usage_count FROM rules", &[])
+        .await
+        .context("Échec de la requête SELECT")?;
+
+    info!("📋 Règles trouvées dans la base :");
+    for row in rows {
+        let id: i32 = row.get("id");
+        let source_ip: String = row.get("source_ip");
+        let dest_ip: String = row.get("dest_ip");
+        let source_port: Option<i32> = row.get("source_port");
+        let dest_port: Option<i32> = row.get("dest_port");
+        let action: String = row.get("action");
+        let protocol: Option<String> = row.get("protocol");
+        let usage_count: i32 = row.get("usage_count");
+
+        info!(
+            "🛡️ Règle #{}: {}:{} → {}:{} | Action: {} | Proto: {} | Utilisations: {}",
+            id,
+            source_ip,
+            source_port.map_or("*".to_string(), |p| p.to_string()),
+            dest_ip,
+            dest_port.map_or("*".to_string(), |p| p.to_string()),
+            action,
+            protocol.unwrap_or_else(|| "any".into()),
+            usage_count
+        );
+    }
+
     signal::ctrl_c().await?;
     info!("🛑 Arrêt du firewall...");
 

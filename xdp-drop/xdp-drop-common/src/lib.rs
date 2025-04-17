@@ -20,7 +20,7 @@ unsafe impl aya::Pod for PacketLog {}
 /// Représente une combinaison d'adresse IPv4 et de port.
 /// Conçue pour être partagée entre l'espace utilisateur et les programmes eBPF.
 #[repr(C)] // Assure une disposition mémoire compatible C, essentielle pour eBPF.
-#[derive(Clone, Copy, Debug)] // Clone/Copy sont essentiels pour les maps. Debug est utile.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)] // Clone/Copy sont essentiels pour les maps. Debug est utile.
                               // Ajoutez PartialEq, Eq, Hash si utilisé comme clé dans std::collections::HashMap (user-space)
 pub struct IpPort {
     /// Adresse IPv4, généralement stockée en network byte order (big-endian).

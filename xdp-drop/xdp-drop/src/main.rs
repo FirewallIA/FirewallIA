@@ -54,10 +54,16 @@ async fn main() -> Result<(), anyhow::Error> {
     blocklist.insert(key, 1, 0)?;
     println!("INSERT: IP {}, PORT {}", key.addr, key.port);
 
-    if let Some(val) = blocklist.get(&key, 0)? {
-        println!("FOUND entry: {:?}", val);
-    } else {
-        println!("❌ Not found in map!");
+    match blocklist.get(&key, 0) {
+        Ok(Some(val)) => {
+            println!("✅ Found value in blocklist: {:?}", val);
+        }
+        Ok(None) => {
+            println!("❌ Key not found in blocklist");
+        }
+        Err(e) => {
+            println!("🔥 Error accessing blocklist: {}", e);
+        }
     }
 
     info!("Waiting for Ctrl-C...");

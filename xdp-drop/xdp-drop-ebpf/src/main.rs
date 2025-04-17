@@ -76,21 +76,24 @@ pub fn decimal_to_hex(ctx: &XdpContext, byte: u8) -> [u8; 2] {
 
 // ✅ NOUVELLE FONCTION pour formater et afficher l'adresse MAC
 pub fn format_mac(ctx: &XdpContext, mac: &[u8; 6]) {
-    let mut out = [0u8; 17]; // "XX:XX:XX:XX:XX:XX"
+    let mut mac_str = [0u8; 17]; // "XX:XX:XX:XX:XX:XX"
     let mut j = 0;
     for (i, &byte) in mac.iter().enumerate() {
         let hex = decimal_to_hex(ctx, byte);
-        out[j] = hex[0];
-        out[j + 1] = hex[1];
+        mac_str[j] = hex[0];
+        mac_str[j + 1] = hex[1];
         if i < 5 {
-            out[j + 2] = b':';
+            mac_str[j + 2] = b':';
         }
         j += 3;
     }
 
-    // Solution simple : log le tableau complet en tant que &[u8; 17]
-    info!(ctx, "MAC = {:?}", out);
-    info!(ctx, "SRC MAC RAW: {:?}", mac);
+    // Affichage des octets en hexadécimal sans `{:?}`
+    info!(
+        ctx,
+        "MAC = {}",
+        core::str::from_utf8(&mac_str).unwrap_or("Invalid UTF-8")
+    );
 }
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {

@@ -29,7 +29,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // runtime. This approach is recommended for most real-world use cases. If you would
     // like to specify the eBPF program at runtime rather than at compile-time, you can
     // reach for `Ebpf::load_file` instead.
-    let mut bpf = aya::bpf::load(aya::include_bytes_aligned!(concat!(
+    let mut bpf = aya::Bpf::load(aya::include_bytes_aligned!(concat!(
         env!("OUT_DIR"),
         "/xdp-drop"
     )))?;

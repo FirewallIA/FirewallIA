@@ -44,11 +44,11 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     let program: &mut Xdp = bpf.program_mut("xdp_firewall").unwrap().try_into()?;
-    program
-        .load()?
-        .attach(&opt.iface, XdpFlags::default())
+    program.load()?;
+    program.attach(&opt.iface, XdpFlags::default())
         .context("Échec de l'attachement du programme XDP")?;
 
+    
     // 🔒 Ajout d'une IP + port à bloquer
     let mut blocklist: HashMap<_, IpPort, u32> =
         HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;

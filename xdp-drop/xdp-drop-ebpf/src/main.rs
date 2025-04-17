@@ -32,9 +32,8 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct IpPort {
-    pub ip: u32,
+    pub addr: u32,
     pub port: u16,
-    pub _pad: u16, // padding to align to 8 bytes total (needed for HashMap keys)
 }
 
 
@@ -67,9 +66,8 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
 // (2)
 fn block_ip_port(ip: u32, port: u16) -> bool {
     let key = IpPort {
-        ip,
+        addr,
         port,
-        _pad: 0,
     };
     unsafe { BLOCKLIST.get(&key).is_some() }
 }

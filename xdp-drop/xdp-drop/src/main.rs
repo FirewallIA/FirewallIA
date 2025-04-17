@@ -48,7 +48,7 @@ async fn main() -> Result<(), anyhow::Error> {
         HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
 
     let key = IpPort {
-        ip: u32::from_be_bytes([192, 168, 0, 42]),
+        addr: u32::from_be_bytes([192, 168, 0, 42]),
         port: 1234,
         _pad: 0,
     };

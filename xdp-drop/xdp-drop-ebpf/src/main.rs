@@ -38,7 +38,7 @@ pub struct IpPort {
     pub _pad: u16, // padding to align to 8 bytes total (needed for HashMap keys)
 }
 
-unsafe impl aya_ebpf::Pod for IpPort {}
+unsafe impl aya_bpf::Pod for IpPort {}
 
 
 #[map]

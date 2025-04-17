@@ -55,7 +55,9 @@ fn block_ip(address: u32) -> bool {
     // The unsafe block is not strictly needed here for the get call itself,
     // but might be kept if BLOCKLIST access requires it in other contexts.
     // However, for clarity, let's assume HashMap::get is safe.
-    BLOCKLIST.get(&address).is_some()
+    unsafe {
+        BLOCKLIST.get(&address).is_some()
+    }
 }
 
 // REMOVED: decimal_to_hex function

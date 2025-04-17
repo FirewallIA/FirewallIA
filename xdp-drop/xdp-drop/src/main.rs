@@ -2,16 +2,14 @@ use anyhow::Context;
 use aya::{
     maps::HashMap,
     programs::{Xdp, XdpFlags},
-    util::online_cpus,
 };
 use aya_log::EbpfLogger;
 use clap::Parser;
 use flexi_logger::{Logger, FileSpec, Duplicate};
-use log::{error, info, warn};
-use std::net::Ipv4Addr;
+use log::{info, warn};
 use tokio::signal;
 
-use xdp_drop_common::IpPort; // struct partagée
+use xdp_drop_common::IpPort;
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -23,16 +21,19 @@ struct Opt {
 async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
 
-    // 🔥 Initialise flexi_logger pour enregistrer dans un fichier et afficher aussi dans stdout
+    // 📝 Initialisation du logger : log dans fichier + stdout
     Logger::try_with_str("info")?
-        .log_to_file()
-        .directory("logs") // dossier où sera stocké le log
-        .basename("firewall")  // nom du fichier : firewall.log
-        .suppress_timestamp()  // pas de timestamp dans le nom de fichier
-        .duplicate_to_stdout(Duplicate::Info) // Affiche aussi dans le terminal
+        .log_to_file(
+            FileSpec::default()
+                .directory("logs")     // dossier où sera créé le log
+                .basename("firewall")  // nom du fichier log : firewall.log
+                .suppress_timestamp(), // pas de timestamp dans le nom de fichier
+        )
+        .duplicate_to_stdout(Duplicate::Info) // affiche aussi dans le terminal
         .start()
-        .context("Erreur lors de l'initialisation de flexi_logger")?;
+        .context("Erreur lors de l'initialisation du logger")?;
 
+    // 🧠 Chargement du programme eBPF
     let mut bpf = aya::Bpf::load(aya::include_bytes_aligned!(concat!(
         env!("OUT_DIR"),
         "/xdp-drop"
@@ -43,12 +44,12 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     let program: &mut Xdp = bpf.program_mut("xdp_firewall").unwrap().try_into()?;
-    program.load()?;
     program
+        .load()?
         .attach(&opt.iface, XdpFlags::default())
         .context("Échec de l'attachement du programme XDP")?;
 
-    // 🧠 Ajouter une IP/port à bloquer
+    // 🔒 Ajout d'une IP + port à bloquer
     let mut blocklist: HashMap<_, IpPort, u32> =
         HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
 
@@ -59,9 +60,9 @@ async fn main() -> Result<(), anyhow::Error> {
     };
     blocklist.insert(key, 1, 0)?;
 
-    // ✅ Exemple de log
+    // ✅ Logs de statut
     info!("🔥 Le firewall est en marche !");
-    info!("⏳ En attente de Ctrl-C pour arrêter...");
+    info!("⏳ Appuyez sur Ctrl-C pour arrêter...");
 
     signal::ctrl_c().await?;
     info!("🛑 Arrêt du firewall...");

@@ -6,7 +6,7 @@ use aya::{
 };
 use aya_log::EbpfLogger;
 use clap::Parser;
-use flexi_logger::{Logger, Duplicate};
+use flexi_logger::{Logger, FileSpec, Duplicate};
 use log::{error, info, warn};
 use std::net::Ipv4Addr;
 use tokio::signal;
@@ -26,7 +26,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // 🔥 Initialise flexi_logger pour enregistrer dans un fichier et afficher aussi dans stdout
     Logger::try_with_str("info")?
         .log_to_file()
-        .directory("/var/log") // dossier où sera stocké le log
+        .directory("logs") // dossier où sera stocké le log
         .basename("firewall")  // nom du fichier : firewall.log
         .suppress_timestamp()  // pas de timestamp dans le nom de fichier
         .duplicate_to_stdout(Duplicate::Info) // Affiche aussi dans le terminal

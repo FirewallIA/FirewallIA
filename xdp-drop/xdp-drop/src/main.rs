@@ -5,7 +5,6 @@ use aya::{
 };
 use aya_log::EbpfLogger;
 use clap::Parser;
-use log::{info, warn};
 use std::net::Ipv4Addr;
 use tokio::signal;
 

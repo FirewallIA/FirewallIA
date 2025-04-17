@@ -88,17 +88,9 @@ pub fn format_mac(ctx: &XdpContext, mac: &[u8; 6]) {
         j += 3;
     }
 
-    // Log chaque octet manuellement
-    for i in 0..6 {
-        let offset = i * 3;
-        info!(
-            ctx,
-            "MAC[{}] = {}{}",
-            i,
-            out[offset] as char,
-            out[offset + 1] as char
-        );
-    }
+    // Solution simple : log le tableau complet en tant que &[u8; 17]
+    info!(ctx, "MAC = {:?}", out);
+    info!(ctx, "SRC MAC RAW: {:?}", mac);
 }
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {

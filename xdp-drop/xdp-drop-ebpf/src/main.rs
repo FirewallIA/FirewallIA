@@ -9,7 +9,7 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::info;
-
+use aya_bpf::Pod;
 use core::mem;
 use network_types::{
     eth::{EthHdr, EtherType},

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aya-ebpf = { git = "https://github.com/aya-rs/aya" }
+aya-bpf = { git = "0.11" } 
 aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
 xdp-drop-common = { path = "../xdp-drop-common" }
 network-types = "0.0.7"

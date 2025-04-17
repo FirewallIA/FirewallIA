@@ -11,7 +11,7 @@ use tokio::signal;
 
 use aya::maps::HashMap;
 use aya::util::online_cpus;
-use xdp-drop::IpPort; // bien sûr il faut que la struct soit partagée avec le user
+use xdp_drop::IpPort; // bien sûr il faut que la struct soit partagée avec le user
 
 
 #[derive(Debug, Parser)]

@@ -2,20 +2,16 @@ use anyhow::Context;
 use aya::{
     maps::HashMap,
     programs::{Xdp, XdpFlags},
+    util::online_cpus,
 };
 use aya_log::EbpfLogger;
 use clap::Parser;
+use flexi_logger::{Logger, Duplicate};
+use log::{error, info, warn};
 use std::net::Ipv4Addr;
 use tokio::signal;
 
-use aya::util::online_cpus;
-use xdp_drop_common::IpPort; // bien sûr il faut que la struct soit partagée avec le user
-
-use log::{info, error, warn};
-use simple_logger::SimpleLogger;
-use std::fs::File;
-use std::io::{self, Write};
-
+use xdp_drop_common::IpPort; // struct partagée
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -27,27 +23,32 @@ struct Opt {
 async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
 
-    env_logger::init();
+    // 🔥 Initialise flexi_logger pour enregistrer dans un fichier et afficher aussi dans stdout
+    Logger::try_with_str("info")?
+        .log_to_file()
+        .directory("/var/log") // dossier où sera stocké le log
+        .basename("firewall")  // nom du fichier : firewall.log
+        .suppress_timestamp()  // pas de timestamp dans le nom de fichier
+        .duplicate_to_stdout(Duplicate::Info) // Affiche aussi dans le terminal
+        .start()
+        .context("Erreur lors de l'initialisation de flexi_logger")?;
 
-    // This will include your eBPF object file as raw bytes at compile-time and load it at
-    // runtime. This approach is recommended for most real-world use cases. If you would
-    // like to specify the eBPF program at runtime rather than at compile-time, you can
-    // reach for `Ebpf::load_file` instead.
     let mut bpf = aya::Bpf::load(aya::include_bytes_aligned!(concat!(
         env!("OUT_DIR"),
         "/xdp-drop"
     )))?;
-    if let Err(e) = EbpfLogger::init(&mut bpf) {
-        // This can happen if you remove all log statements from your eBPF program.
-        warn!("failed to initialize eBPF logger: {}", e);
-    }
-    let program: &mut Xdp =
-        bpf.program_mut("xdp_firewall").unwrap().try_into()?;
-    program.load()?;
-    program.attach(&opt.iface, XdpFlags::default())
-        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
 
-    // (1)
+    if let Err(e) = EbpfLogger::init(&mut bpf) {
+        warn!("Logger eBPF non initialisé : {}", e);
+    }
+
+    let program: &mut Xdp = bpf.program_mut("xdp_firewall").unwrap().try_into()?;
+    program.load()?;
+    program
+        .attach(&opt.iface, XdpFlags::default())
+        .context("Échec de l'attachement du programme XDP")?;
+
+    // 🧠 Ajouter une IP/port à bloquer
     let mut blocklist: HashMap<_, IpPort, u32> =
         HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
 
@@ -58,23 +59,12 @@ async fn main() -> Result<(), anyhow::Error> {
     };
     blocklist.insert(key, 1, 0)?;
 
-    // Créer ou ouvrir un fichier de log
-    let log_file = File::create("/var/log/firewall_log.txt").unwrap();
+    // ✅ Exemple de log
+    info!("🔥 Le firewall est en marche !");
+    info!("⏳ En attente de Ctrl-C pour arrêter...");
 
-    // Rediriger les logs vers le fichier
-    let log_file = io::BufWriter::new(log_file);
-    SimpleLogger::new()
-        .with_level(log::LevelFilter::Info)
-        .with_output(log_file)
-        .init()
-        .unwrap();
-
-    // Exemple de log
-    info!("Le firewall a démarré.");
-
-    info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
-    info!("Exiting...");
+    info!("🛑 Arrêt du firewall...");
 
     Ok(())
 }

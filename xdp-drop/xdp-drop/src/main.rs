@@ -50,7 +50,6 @@ async fn main() -> Result<(), anyhow::Error> {
     let key = IpPort {
         addr: u32::from_be_bytes([192, 168, 0, 42]),
         port: 1234,
-        _pad: 0,
     };
     blocklist.insert(key, 1, 0)?;
 

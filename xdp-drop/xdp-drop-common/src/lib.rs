@@ -25,6 +25,7 @@ unsafe impl aya::Pod for PacketLog {}
 pub struct IpPort {
     /// Adresse IPv4, généralement stockée en network byte order (big-endian).
     pub addr: u32,
+    pub addr_dest : u32,
     /// Numéro de port, généralement stocké en network byte order (big-endian).
     pub port: u16,
     pub _pad: u16,

@@ -17,7 +17,7 @@ fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow!("xdp-drop-ebpf package not found"))?;
 
     // Compilation du code eBPF
-    let _ = aya_build::build_ebpf(&[ebpf_package], Toolchain::default());
+    let _ = aya_build::build_ebpf([ebpf_package.clone()], Toolchain::default());
 
     // Compilation des fichiers proto
     let proto_file = "../proto/firewall.proto";

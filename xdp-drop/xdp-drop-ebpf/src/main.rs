@@ -74,14 +74,14 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     // Log source MAC address bytes as decimal numbers
     info!(
         &ctx,
-        "SRC MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        "SRC MAC: {:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
         src_mac[0], src_mac[1], src_mac[2],
         src_mac[3], src_mac[4], src_mac[5]
     );
     
     info!(
         &ctx,
-        "DST MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        "DST MAC: {:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
         dst_mac[0], dst_mac[1], dst_mac[2],
         dst_mac[3], dst_mac[4], dst_mac[5]
     );

@@ -78,7 +78,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
 
     // Affichage des octets hexadécimaux sans utilisation de formatage complexe
     info!(
-        ctx,
+        &ctx,
         "MAC = {}{}:{}{}:{}{}:{}{}:{}{}:{}{}",
         mac[0] >> 4,
         mac[0] & 0x0F,

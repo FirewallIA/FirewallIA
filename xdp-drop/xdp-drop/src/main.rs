@@ -86,7 +86,7 @@ pub fn decimal_to_hex(ctx: &XdpContext, byte: u8) -> [u8; 2] {
     let low = byte % 16;
     let high = byte / 16;
     info!(
-        &ctx,
+        ctx,
         "{} -> {}={}, {}={}",
         byte,
         high,

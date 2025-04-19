@@ -64,34 +64,24 @@ fn block_ip(address: u32) -> bool {
 // REMOVED: format_mac function
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
-    let mut mac_str = [0u8; 17]; // "XX:XX:XX:XX:XX:XX"
-    let mut j = 0;
-    for (i, &byte) in mac.iter().enumerate() {
-        let hex = decimal_to_hex(ctx, byte);
-        mac_str[j] = hex[0];
-        mac_str[j + 1] = hex[1];
-        if i < 5 {
-            mac_str[j + 2] = b':';
-        }
-        j += 3;
-    }
+    // Ethernet Header
+    let ethhdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
+    let src_mac: [u8; 6] = unsafe { (*ethhdr).src_addr };
+    let dst_mac: [u8; 6] = unsafe { (*ethhdr).dst_addr };
+    let ether_type = unsafe { (*ethhdr).ether_type };
 
-    // Affichage des octets hexadécimaux sans utilisation de formatage complexe
+    // --- Log MAC Addresses (Simple Decimal Format) ---
+    // Log source MAC address bytes as decimal numbers
     info!(
         &ctx,
-        "MAC = {}{}:{}{}:{}{}:{}{}:{}{}:{}{}",
-        mac[0] >> 4,
-        mac[0] & 0x0F,
-        mac[1] >> 4,
-        mac[1] & 0x0F,
-        mac[2] >> 4,
-        mac[2] & 0x0F,
-        mac[3] >> 4,
-        mac[3] & 0x0F,
-        mac[4] >> 4,
-        mac[4] & 0x0F,
-        mac[5] >> 4,
-        mac[5] & 0x0F
+        "SRC MAC: {}:{}:{}:{}:{}:{}", // Use standard integer format specifier (implicitly {u})
+        src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]
+    );
+    // Log destination MAC address bytes as decimal numbers
+    info!(
+        &ctx,
+        "DST MAC: {}:{}:{}:{}:{}:{}", // Use standard integer format specifier (implicitly {u})
+        dst_mac[0], dst_mac[1], dst_mac[2], dst_mac[3], dst_mac[4], dst_mac[5]
     );
     // --- End Log MAC Addresses ---
 

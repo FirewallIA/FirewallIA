@@ -1,28 +1,37 @@
 use anyhow::{anyhow, Context as _};
 use aya_build::{cargo_metadata, Toolchain};
+use std::env;
+use std::path::PathBuf;
 
 fn main() -> anyhow::Result<()> {
+    // Trouver le package eBPF
     let cargo_metadata::Metadata { packages, .. } =
         cargo_metadata::MetadataCommand::new()
             .no_deps()
             .exec()
             .context("MetadataCommand::exec")?;
+
     let ebpf_package = packages
-        .into_iter()
-        .find(|cargo_metadata::Package { name, .. }| name == "xdp-drop-ebpf")
+        .iter()
+        .find(|p| p.name == "xdp-drop-ebpf")
         .ok_or_else(|| anyhow!("xdp-drop-ebpf package not found"))?;
-    aya_build::build_ebpf([ebpf_package], Toolchain::default());
-    
-    let out_dir = std::env::var("src").expect("src not set");
+
+    // Compilation du code eBPF
+    let _ = aya_build::build_ebpf(&[ebpf_package], Toolchain::default());
+
+    // Compilation des fichiers proto
+    let proto_file = "../proto/firewall.proto";
+    let proto_include = "../proto";
+
+    // Dossier de sortie = src/generated
+    let out_dir = PathBuf::from(env::var("OUT_DIR")?);
 
     tonic_build::configure()
-    .build_server(true)  // Générer le serveur gRPC
-    .build_client(true)  // Générer le client gRPC
-    .out_dir(std::env::var("src")?)     // Dossier où les fichiers générés seront placés
-    .compile(
-        &["../proto/firewall.proto"],  // Chemin vers ton fichier .proto
-        &["../proto"],                  // Dossier contenant les fichiers .proto
-    )
-    .expect("Échec de la compilation du fichier .proto");
+        .build_server(true)
+        .build_client(true)
+        .out_dir(&out_dir)
+        .compile(&[proto_file], &[proto_include])
+        .context("Échec de la compilation du fichier .proto")?;
+
     Ok(())
 }

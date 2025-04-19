@@ -91,10 +91,13 @@ async fn main() -> Result<(), anyhow::Error> {
         let usage_count: i32 = row.get("usage_count");
         
         let ip = source_ip.parse::<std::net::Ipv4Addr>()?;
+        let ip_dest = dest_ip.parse::<std::net::Ipv4Addr>()?;
         let port = dest_port.unwrap_or(0) as u16;
         info!("INFO IP : {} {}",ip, port);
+
         let key = IpPort {
             addr: u32::from(ip).to_be(),
+            addr_dest : u32::from(ip_dest).to_be(),
             port,
             _pad: 0,
         };

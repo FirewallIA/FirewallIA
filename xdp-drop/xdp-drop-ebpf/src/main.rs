@@ -33,6 +33,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 #[derive(Debug, Clone, Copy)]
 pub struct IpPort {
     pub addr: u32,
+    pub addr_dest : u32,
     pub port: u16,
     pub _pad: u16,
 }
@@ -65,15 +66,15 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
 }
 
 // (2)
-fn block_ip_port(ctx: &XdpContext, addr: u32, port: u16) -> bool {
-    let key = IpPort { addr, port, _pad: 0 };
+fn block_ip_port(ctx: &XdpContext, addr: u32, addr_dest : u32, port: u16) -> bool {
+    let key = IpPort { addr, addr_dest, port, _pad: 0 };
     let is_blocked = unsafe { BLOCKLIST.get(&key).is_some() };
 
     let ip_be = addr.to_be_bytes(); // pour affichage plus clair
-
+    let ip_dest_be = addr_dest.to_be_bytes(); // pour affichage plus clair
     let status = if is_blocked { "BLOCKED" } else { "ALLOWED" };
 
-    info!(ctx, "Checking IP: {}.{}.{}.{} Port: {} Status : {}", ip_be[0], ip_be[1], ip_be[2], ip_be[3], port, status);
+    info!(ctx, "Checking IP src : {}.{}.{}.{}, IP dest : {}.{}.{}.{} Port: {} Status : {}", ip_be[0], ip_be[1], ip_be[2], ip_be[3], port, status);
 
     is_blocked
 }
@@ -115,7 +116,7 @@ let dest_port;
     }
  
     // (3)
-    let action = if block_ip_port(&ctx, source, dest_port) {
+    let action = if block_ip_port(&ctx, source, destination, dest_port) {
         xdp_action::XDP_DROP
     } else {
         xdp_action::XDP_PASS

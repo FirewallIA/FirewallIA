@@ -70,8 +70,8 @@ fn block_ip_port(ctx: &XdpContext, addr: u32, addr_dest : u32, port: u16) -> boo
     let key = IpPort { addr, addr_dest, port, _pad: 0 };
     let is_blocked = unsafe { BLOCKLIST.get(&key).is_some() };
 
-    let ip_be = addr.to_be_bytes(); // pour affichage plus clair
-    let ip_dest_be = addr_dest.to_be_bytes(); // pour affichage plus clair
+    let ip_be = addr.to_le_bytes(); // pour affichage plus clair
+    let ip_dest_be = addr_dest.to_le_bytes(); // pour affichage plus clair
     let status = if is_blocked { "BLOCKED" } else { "ALLOWED" };
 
     info!(ctx, "Checking IP src : {}.{}.{}.{}, IP dest : {}.{}.{}.{} Port: {} Status : {}", ip_be[0], ip_be[1], ip_be[2], ip_be[3],ip_dest_be[0], ip_dest_be[1], ip_dest_be[2], ip_dest_be[3],  port, status);

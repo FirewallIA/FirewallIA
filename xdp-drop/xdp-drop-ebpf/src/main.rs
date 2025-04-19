@@ -73,7 +73,7 @@ fn block_ip_port(ctx: &XdpContext, addr: u32, port: u16) -> bool {
 
     let status = if is_blocked { "BLOCKED" } else { "ALLOWED" };
 
-    info!(ctx, "Checking IP: {}.{}.{}.{} Port: {} Status : {} Key : {}", ip_be[0], ip_be[1], ip_be[2], ip_be[3], port, status, key);
+    info!(ctx, "Checking IP: {}.{}.{}.{} Port: {} Status : {}", ip_be[0], ip_be[1], ip_be[2], ip_be[3], port, status);
 
     is_blocked
 }

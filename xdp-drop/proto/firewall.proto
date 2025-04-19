@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package firewall;
+
+service FirewallService {
+    rpc GetStatus (Empty) returns (FirewallStatus);
+}
+
+message Empty {}
+
+message FirewallStatus {
+    string status = 1; // "UP" ou "DOWN"
+}

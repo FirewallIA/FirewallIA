@@ -13,6 +13,8 @@ fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow!("xdp-drop-ebpf package not found"))?;
     aya_build::build_ebpf([ebpf_package], Toolchain::default());
     
+    let out_dir = std::env::var("src").expect("src not set");
+
     tonic_build::configure()
     .build_server(true)  // Générer le serveur gRPC
     .build_client(true)  // Générer le client gRPC

@@ -130,9 +130,9 @@ let dest_port;
     info!(
         &ctx,
         "IP SRC: {:i}:{}, DST: {:i}:{}, ACTION: {}",
-        source,
+        u32::from_be(source),
         source_port,
-        destination,
+        u32::from_be(destination),
         dest_port,
         action_str
     );

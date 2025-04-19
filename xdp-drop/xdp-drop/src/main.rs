@@ -29,6 +29,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 .basename("firewall")  // nom du fichier log : firewall.log
                 .suppress_timestamp(), // pas de timestamp dans le nom de fichier
         )
+        .append()
         .duplicate_to_stdout(Duplicate::Info) // affiche aussi dans le terminal
         .start()
         .context("Erreur lors de l'initialisation du logger")?;

@@ -91,7 +91,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let protocol = unsafe { (*ipv4hdr).proto };
     let transport_offset = EthHdr::LEN + (unsafe { (*ipv4hdr).ihl() } as usize * 4);
 
-    let source =let source = unsafe { (*ipv4hdr).src_addr };
+    let source = unsafe { (*ipv4hdr).src_addr };
     let destination = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
 
     let source_port;

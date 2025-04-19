@@ -14,9 +14,6 @@ use firewall::{Empty, FirewallStatus};
 use xdp_drop_common::IpPort;
 tonic::include_proto!("firewall");
 
-#[path = concat!(env!("src"), "/firewall.rs")]
-mod firewall;
-
 pub mod firewall {
     include!(concat!(env!("src"), "/firewall.rs"));
 }

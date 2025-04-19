@@ -92,7 +92,7 @@ async fn main() -> Result<(), anyhow::Error> {
         
         let ip = source_ip.parse::<std::net::Ipv4Addr>()?;
         let port = dest_port.unwrap_or(0) as u16;
-
+        info!("INFO IP : {}",ip)
         let key = IpPort {
             addr: u32::from(ip).to_be(),
             port,

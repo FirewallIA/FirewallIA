@@ -18,8 +18,8 @@ fn main() -> anyhow::Result<()> {
     .build_client(true)  // Générer le client gRPC
     .out_dir("src")      // Dossier où les fichiers générés seront placés
     .compile(
-        &["proto/firewall.proto"],  // Chemin vers ton fichier .proto
-        &["proto"],                  // Dossier contenant les fichiers .proto
+        &["../proto/firewall.proto"],  // Chemin vers ton fichier .proto
+        &["../proto"],                  // Dossier contenant les fichiers .proto
     )
     .expect("Échec de la compilation du fichier .proto");
     Ok(())

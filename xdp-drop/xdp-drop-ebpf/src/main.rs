@@ -67,14 +67,13 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
 // (2)
 fn block_ip_port(ctx: &XdpContext, addr: u32, port: u16) -> bool {
     let key = IpPort { addr, port, _pad: 0 };
-
     let is_blocked = unsafe { BLOCKLIST.get(&key).is_some() };
 
     let ip_be = addr.to_be_bytes(); // pour affichage plus clair
 
     let status = if is_blocked { "BLOCKED" } else { "ALLOWED" };
 
-    info!(ctx, "Checking IP: {}.{}.{}.{} Port: {} Status : {}", ip_be[0], ip_be[1], ip_be[2], ip_be[3], port, status);
+    info!(ctx, "Checking IP: {}.{}.{}.{} Port: {} Status : {} Key : {}", ip_be[0], ip_be[1], ip_be[2], ip_be[3], port, status, key);
 
     is_blocked
 }

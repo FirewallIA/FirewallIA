@@ -174,7 +174,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     };
 
     info!(
-        &ctx,
+        ctx,
         "MAC SRC: X, IP SRC: {:i}:{} => MAC DST: X, DST: {:i}:{}, ACTION: {}",
         // "MAC SRC: {}, IP SRC: {:i}:{} => MAC DST: {}, DST: {:i}:{}, ACTION: {}",
         // src_mac_val,

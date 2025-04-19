@@ -11,7 +11,7 @@ fn main() -> anyhow::Result<()> {
         .into_iter()
         .find(|cargo_metadata::Package { name, .. }| name == "xdp-drop-ebpf")
         .ok_or_else(|| anyhow!("xdp-drop-ebpf package not found"))?;
-    aya_build::build_ebpf([ebpf_package], Toolchain::default())
+    aya_build::build_ebpf([ebpf_package], Toolchain::default());
     
     tonic_build::configure()
     .build_server(true)  // Générer le serveur gRPC
@@ -22,4 +22,5 @@ fn main() -> anyhow::Result<()> {
         &["proto"],                  // Dossier contenant les fichiers .proto
     )
     .expect("Échec de la compilation du fichier .proto");
+    Ok(())
 }

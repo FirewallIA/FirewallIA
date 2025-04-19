@@ -74,7 +74,7 @@ fn block_ip_port(ctx: &XdpContext, addr: u32, addr_dest : u32, port: u16) -> boo
     let ip_dest_be = addr_dest.to_be_bytes(); // pour affichage plus clair
     let status = if is_blocked { "BLOCKED" } else { "ALLOWED" };
 
-    info!(ctx, "Checking IP src : {}.{}.{}.{}, IP dest : {}.{}.{}.{} Port: {} Status : {}", ip_be[0], ip_be[1], ip_be[2], ip_be[3], port, status);
+    info!(ctx, "Checking IP src : {}.{}.{}.{}, IP dest : {}.{}.{}.{} Port: {} Status : {}", ip_be[0], ip_be[1], ip_be[2], ip_be[3],ip_dest_be[0], ip_dest_be[1], ip_dest_be[2], ip_dest_be[3],  port, status);
 
     is_blocked
 }

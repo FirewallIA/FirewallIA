@@ -53,6 +53,21 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut blocklist: HashMap<_, IpPort, u32> =
         HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
 
+    // 🐘 Connexion à la base PostgreSQL
+    let (client, connection) = tokio_postgres::connect(
+    "host=localhost user=postgres password=postgres dbname=firewall",
+    tokio_postgres::NoTls,
+    )
+    .await
+    .context("Erreur de connexion à PostgreSQL")?;
+
+    // 🧵 Exécuter la connexion en tâche asynchrone
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("Erreur de connexion PostgreSQL : {}", e);
+        }
+    });
+
     // 🗂️ Sélection des règles depuis la table
     let rows = client
         .query("SELECT id, source_ip, dest_ip, source_port, dest_port, action, protocol, usage_count FROM rules", &[])
@@ -115,20 +130,7 @@ async fn main() -> Result<(), anyhow::Error> {
     info!("🔥 Le firewall est en marche !");
     info!("⏳ Appuyez sur Ctrl-C pour arrêter...");
 
-      // 🐘 Connexion à la base PostgreSQL
-      let (client, connection) = tokio_postgres::connect(
-        "host=localhost user=postgres password=postgres dbname=firewall",
-        tokio_postgres::NoTls,
-    )
-    .await
-    .context("Erreur de connexion à PostgreSQL")?;
 
-    // 🧵 Exécuter la connexion en tâche asynchrone
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            eprintln!("Erreur de connexion PostgreSQL : {}", e);
-        }
-    });
 
 
     signal::ctrl_c().await?;

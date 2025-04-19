@@ -16,7 +16,7 @@ fn main() -> anyhow::Result<()> {
     tonic_build::configure()
     .build_server(true)  // Générer le serveur gRPC
     .build_client(true)  // Générer le client gRPC
-    .out_dir("src")      // Dossier où les fichiers générés seront placés
+    .out_dir(std::env::var("src")?)     // Dossier où les fichiers générés seront placés
     .compile(
         &["../proto/firewall.proto"],  // Chemin vers ton fichier .proto
         &["../proto"],                  // Dossier contenant les fichiers .proto

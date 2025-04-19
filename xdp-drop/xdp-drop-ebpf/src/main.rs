@@ -66,8 +66,8 @@ fn block_ip(address: u32) -> bool {
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     // Ethernet Header
     let ethhdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
-    let src_mac: [u16; 6] = unsafe { (*ethhdr).src_addr };
-    let dst_mac: [u16; 6] = unsafe { (*ethhdr).dst_addr };
+    let src_mac: [u8; 6] = unsafe { (*ethhdr).src_addr };
+    let dst_mac: [u8; 6] = unsafe { (*ethhdr).dst_addr };
     let ether_type = unsafe { (*ethhdr).ether_type };
 
     // --- Log MAC Addresses (Simple Decimal Format) ---

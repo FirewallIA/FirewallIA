@@ -1,21 +1,23 @@
 use anyhow::Context;
 use aya::{
+    Bpf,
+    include_bytes_aligned,
     maps::HashMap,
     programs::{Xdp, XdpFlags},
 };
 use aya_log::EbpfLogger;
 use clap::Parser;
-use flexi_logger::{Logger, FileSpec, Duplicate};
+use flexi_logger::{Duplicate, FileSpec, Logger};
 use log::{info, warn};
 use tokio::signal;
 use tonic::{transport::Server, Request, Response, Status};
-use firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
-use firewall::{Empty, FirewallStatus};
 use xdp_drop_common::IpPort;
+
+// Import du proto compilé gRPC
 tonic::include_proto!("firewall");
 
 pub mod firewall {
-    include!(concat!(env!("src"), "/firewall.rs"));
+    include!(concat!(env!("OUT_DIR"), "/firewall.rs"));
 }
 
 #[derive(Debug, Parser)]
@@ -31,11 +33,10 @@ pub struct MyFirewallService;
 impl FirewallService for MyFirewallService {
     async fn get_status(
         &self,
-        _request: Request<Empty>,
-    ) -> Result<Response<FirewallStatus>, Status> {
-        // Logique pour déterminer si le firewall est UP ou DOWN
-        let status = FirewallStatus {
-            status: "UP".to_string(), // Exemple, tu pourrais changer selon la logique de ton firewall
+        _request: Request<firewall::Empty>,
+    ) -> Result<Response<firewall::FirewallStatus>, Status> {
+        let status = firewall::FirewallStatus {
+            status: "UP".to_string(),
         };
         Ok(Response::new(status))
     }
@@ -45,21 +46,21 @@ impl FirewallService for MyFirewallService {
 async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
 
-    // 📝 Initialisation du logger : log dans fichier + stdout
+    // Logger
     Logger::try_with_str("info")?
         .log_to_file(
             FileSpec::default()
-                .directory("logs")     // dossier où sera créé le log
-                .basename("firewall")  // nom du fichier log : firewall.log
-                .suppress_timestamp(), // pas de timestamp dans le nom de fichier
+                .directory("logs")
+                .basename("firewall")
+                .suppress_timestamp(),
         )
         .append()
-        .duplicate_to_stdout(Duplicate::Info) // affiche aussi dans le terminal
+        .duplicate_to_stdout(Duplicate::Info)
         .start()
         .context("Erreur lors de l'initialisation du logger")?;
 
-    // 🧠 Chargement du programme eBPF
-    let mut bpf = aya::Bpf::load(aya::include_bytes_aligned!(concat!(
+    // Chargement du programme eBPF
+    let mut bpf = Bpf::load(include_bytes_aligned!(concat!(
         env!("OUT_DIR"),
         "/xdp-drop"
     )))?;
@@ -68,16 +69,20 @@ async fn main() -> Result<(), anyhow::Error> {
         warn!("Logger eBPF non initialisé : {}", e);
     }
 
-    let program: &mut Xdp = bpf.program_mut("xdp_firewall").unwrap().try_into()?;
-    program.load()?;
+    let program: &mut Xdp = bpf.program_mut("xdp_firewall")
+        .context("Programme xdp_firewall introuvable")?
+        .try_into()
+        .context("Erreur de conversion du programme en Xdp")?;
+    program.load().context("Erreur de chargement du programme XDP")?;
     program.attach(&opt.iface, XdpFlags::default())
-        .context("Échec de l'attachement du programme XDP")?;
+        .context("Erreur d'attachement du programme XDP")?;
 
-    // 🔒 Ajout d'une IP + port à bloquer
+    // Blocage d'IP
     let mut blocklist: HashMap<_, IpPort, u32> =
-        HashMap::try_from(bpf.map_mut("BLOCKLIST").unwrap())?;
+        HashMap::try_from(bpf.map_mut("BLOCKLIST")
+        .context("Map BLOCKLIST introuvable dans eBPF")?)?;
 
-    // 🐘 Connexion à la base PostgreSQL
+    // Connexion PostgreSQL
     let (client, connection) = tokio_postgres::connect(
         "host=localhost user=postgres password=postgres dbname=firewall",
         tokio_postgres::NoTls,
@@ -85,21 +90,20 @@ async fn main() -> Result<(), anyhow::Error> {
     .await
     .context("Erreur de connexion à PostgreSQL")?;
 
-    // 🧵 Exécuter la connexion en tâche asynchrone
     tokio::spawn(async move {
         if let Err(e) = connection.await {
-            eprintln!("Erreur de connexion PostgreSQL : {}", e);
+            eprintln!("Erreur de connexion PostgreSQL : {e}");
         }
     });
 
-    // 🗂️ Sélection des règles depuis la table
+    // Lecture des règles
     let rows = client
         .query(
             "SELECT id, source_ip, dest_ip, source_port, dest_port, action, protocol, usage_count FROM rules",
             &[],
         )
         .await
-        .context("Échec de la requête SELECT")?;
+        .context("Erreur lors de l'exécution du SELECT sur rules")?;
 
     const ACTION_DENY: u32 = 1;
     const ACTION_ALLOW: u32 = 2;
@@ -115,10 +119,11 @@ async fn main() -> Result<(), anyhow::Error> {
         let protocol: Option<String> = row.get("protocol");
         let usage_count: i32 = row.get("usage_count");
 
-        let ip = source_ip.parse::<std::net::Ipv4Addr>()?;
-        let ip_dest = dest_ip.parse::<std::net::Ipv4Addr>()?;
+        let ip = source_ip.parse::<std::net::Ipv4Addr>()
+            .context(format!("IP source invalide pour la règle {id}"))?;
+        let ip_dest = dest_ip.parse::<std::net::Ipv4Addr>()
+            .context(format!("IP destination invalide pour la règle {id}"))?;
         let port = dest_port.unwrap_or(0) as u16;
-        info!("INFO IP : {} {}", ip, port);
 
         let key = IpPort {
             addr: u32::from(ip).to_be(),
@@ -131,42 +136,40 @@ async fn main() -> Result<(), anyhow::Error> {
             "deny" => ACTION_DENY,
             "allow" => ACTION_ALLOW,
             _ => {
-                warn!("Action inconnue '{}' pour la règle #{}, ignorée.", action, id);
+                warn!("Action inconnue '{}' pour la règle #{id}, ignorée.", action);
                 continue;
             }
         };
 
-        blocklist.insert(key, action_value, 0)?;
+        blocklist.insert(key, action_value, 0)
+            .context(format!("Erreur lors de l'insertion de la règle #{id}"))?;
 
         info!(
-            "🛡️ Règle #{}: {}:{} → {}:{} | Action: {} | Proto: {} | Utilisations: {}",
-            id,
-            source_ip,
+            "🛡️ Règle #{id}: {source_ip}:{} → {dest_ip}:{} | Action: {action} | Proto: {} | Utilisations: {usage_count}",
             source_port.map_or("*".to_string(), |p| p.to_string()),
-            dest_ip,
             dest_port.map_or("*".to_string(), |p| p.to_string()),
-            action,
-            protocol.unwrap_or_else(|| "any".into()),
-            usage_count
+            protocol.unwrap_or_else(|| "any".to_string()),
         );
     }
 
-    // Démarrage du serveur gRPC pour exposer le statut du firewall
-    let grpc_addr = "[::1]:50051".parse()?;
+    // Serveur gRPC
+    let grpc_addr = "[::1]:50051".parse()
+        .context("Adresse gRPC invalide")?;
     let firewall_service = MyFirewallService::default();
+    let grpc_server = Server::builder()
+        .add_service(FirewallServiceServer::new(firewall_service))
+        .serve(grpc_addr);
+
     tokio::spawn(async move {
-        Server::builder()
-            .add_service(FirewallServiceServer::new(firewall_service))
-            .serve(grpc_addr)
-            .await
-            .unwrap();
+        if let Err(e) = grpc_server.await {
+            eprintln!("Erreur serveur gRPC : {e}");
+        }
     });
 
-    // ✅ Logs de statut
     info!("🔥 Le firewall est en marche !");
     info!("⏳ Appuyez sur Ctrl-C pour arrêter...");
 
-    signal::ctrl_c().await?;
+    signal::ctrl_c().await.context("Erreur lors de l'attente du signal Ctrl-C")?;
     info!("🛑 Arrêt du firewall...");
 
     Ok(())

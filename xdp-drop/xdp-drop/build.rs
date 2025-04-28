@@ -23,6 +23,9 @@ fn main() -> anyhow::Result<()> {
     let proto_file = "../proto/firewall.proto";
     let proto_include = "../proto";
 
+    // Inclure le répertoire contenant google/protobuf/empty.proto
+    let prost_types_include = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?).join("path/to/prost-types/src");
+
     // Dossier de sortie = src/generated
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
 
@@ -30,7 +33,7 @@ fn main() -> anyhow::Result<()> {
         .build_server(true)
         .build_client(true)
         .out_dir(&out_dir)
-        .compile(&[proto_file], &[proto_include])
+        .compile(&[proto_file], &[proto_include, prost_types_include.to_str().unwrap()])
         .context("Échec de la compilation du fichier .proto")?;
 
     Ok(())

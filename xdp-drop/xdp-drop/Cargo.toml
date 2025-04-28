@@ -23,8 +23,8 @@ env_logger = "0.11"
 simple_logger = "1.11"
 flexi_logger = "0.27"
 tokio-postgres = "0.7"
-tonic = "0.5"
-prost = "0.11"
+tonic = "0.11"
+prost = "0.11.9"
 
 
 [build-dependencies]
@@ -43,7 +43,7 @@ anyhow = "1"
 # workflows with stable cargo; stable cargo outright refuses to load manifests that use unstable
 # features.
 xdp-drop-ebpf = { path = "../xdp-drop-ebpf" }
-tonic-build = "0.7"
+tonic-build = "0.11"
 
 [[bin]]
 name = "xdp-drop"

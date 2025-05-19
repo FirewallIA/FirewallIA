@@ -22,7 +22,7 @@ tonic::include_proto!("firewall");
 // et Empty depuis `google::protobuf`
 use firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
 use google::protobuf::Empty; // Correction ici !
-
+use firewall::FirewallStatus;
 // Supprimez ce bloc, car tonic::include_proto!("firewall") s'en charge.
 // pub mod firewall {
 //     include!(concat!(env!("OUT_DIR"), "/firewall.rs"));

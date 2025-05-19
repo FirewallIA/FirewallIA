@@ -20,7 +20,9 @@ pub mod firewall {
 tonic::include_proto!("firewall");
 }
 pub mod google {
-    tonic::include_proto!("google.protobuf");
+    pub mod protobuf {
+        tonic::include_proto!("google.protobuf");
+    }
 }
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
 use crate::firewall::FirewallStatus;

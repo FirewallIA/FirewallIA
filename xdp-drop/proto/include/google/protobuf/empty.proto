@@ -32,14 +32,13 @@ syntax = "proto3";
 
 package google.protobuf;
 
-option csharp_namespace = "Google.Protobuf.WellKnownTypes";
 option go_package = "google.golang.org/protobuf/types/known/emptypb";
-option java_multiple_files = true;
-option java_outer_classname = "EmptyProto";
 option java_package = "com.google.protobuf";
+option java_outer_classname = "EmptyProto";
+option java_multiple_files = true;
 option objc_class_prefix = "GPB";
-option php_namespace = "Google\\Protobuf";
-option swift_prefix = "GPB";
+option csharp_namespace = "Google.Protobuf.WellKnownTypes";
+option cc_enable_arenas = true;
 
 // A generic empty message that you can re-use to avoid defining duplicated
 // empty messages in your APIs. A typical example is to use it as the request
@@ -49,5 +48,4 @@ option swift_prefix = "GPB";
 //       rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);
 //     }
 //
-message Empty {
-}
+message Empty {}

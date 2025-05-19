@@ -12,7 +12,6 @@ use log::{info, warn};
 use tokio::signal;
 use tonic::{transport::Server, Request, Response, Status};
 use xdp_drop_common::IpPort;
-
 // Import du proto compilé gRPC
 // Ceci va créer les modules `firewall` et `google` (avec `protobuf` dedans)
 // à la racine de votre crate (ou du module courant si utilisé dans un sous-module).
@@ -22,6 +21,7 @@ tonic::include_proto!("firewall");
 
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
 use crate::firewall::FirewallStatus;
+use prost_types::Empty;
 // Supprimez ce bloc, car tonic::include_proto!("firewall") s'en charge.
 // pub mod firewall {
 //     include!(concat!(env!("OUT_DIR"), "/firewall.rs"));
@@ -40,7 +40,7 @@ pub struct MyFirewallService;
 impl FirewallService for MyFirewallService {
     async fn get_status(
         &self,
-        _request: Request<>, // Doit utiliser le Empty importé
+        _request: Request<Empty>, // Doit utiliser le Empty importé
     ) -> Result<Response<firewall::FirewallStatus>, Status> { // firewall::FirewallStatus est correct
         let status = firewall::FirewallStatus {
             status: "UP".to_string(),

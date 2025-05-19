@@ -26,6 +26,7 @@ fn main() -> anyhow::Result<()> {
     // Inclure le répertoire contenant google/protobuf/empty.proto
     // Tu dois avoir "../proto/include/google/protobuf/empty.proto"
     let google_include = PathBuf::from("../proto/include");
+    let google_include_str = google_include.to_str().context("Chemin non UTF-8")?;
 
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
 
@@ -33,7 +34,7 @@ fn main() -> anyhow::Result<()> {
         .build_server(true)
         .build_client(true)
         .out_dir(&out_dir)
-        .compile(&[proto_file], &[proto_include, google_include])
+        .compile(&[proto_file], &[proto_include, google_include_str])
         .context("Échec de la compilation du fichier .proto")?;
 
     Ok(())

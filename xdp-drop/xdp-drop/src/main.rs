@@ -18,6 +18,11 @@ use xdp_drop_common::IpPort;
 pub mod firewall {
 tonic::include_proto!("firewall");
 }
+pub mod google {
+    pub mod protobuf { // Crée la hiérarchie google::protobuf
+        tonic::include_proto!("google.protobuf"); // Inclut OUT_DIR/google.protobuf.rs
+    }
+}
 
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
 use crate::firewall::FirewallStatus;

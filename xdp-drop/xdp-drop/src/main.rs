@@ -40,7 +40,7 @@ pub struct MyFirewallService;
 impl FirewallService for MyFirewallService {
     async fn get_status(
         &self,
-        _request: Request<crate::google::protobuf::Empty;>, // Doit utiliser le Empty importé
+        _request: Request<crate::google::protobuf::Empty>, // Doit utiliser le Empty importé
     ) -> Result<Response<firewall::FirewallStatus>, Status> { // firewall::FirewallStatus est correct
         let status = firewall::FirewallStatus {
             status: "UP".to_string(),

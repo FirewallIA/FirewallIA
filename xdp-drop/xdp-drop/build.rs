@@ -25,6 +25,6 @@ fn main() -> anyhow::Result<()> {
 
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
 
-    tonic_build::compile_protos("proto/firewall.proto")?;
+    tonic_build::compile_protos("../proto/firewall.proto")?;
     Ok(())
 }

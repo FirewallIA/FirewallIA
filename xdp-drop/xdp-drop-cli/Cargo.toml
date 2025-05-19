@@ -1,6 +1,8 @@
 # xdp-drop-cli/Cargo.toml
 
 [package]
+name = "xdp-drop-cli"
+version = "0.1.0"   
 edition = "2021" # Recommandé
 
 [dependencies]

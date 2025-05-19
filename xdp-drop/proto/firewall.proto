@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package firewall;
 
+import "google/protobuf/empty.proto";
+
 service FirewallService {
     rpc GetStatus (Empty) returns (FirewallStatus);
 }

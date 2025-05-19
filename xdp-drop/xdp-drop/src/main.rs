@@ -19,14 +19,10 @@ use xdp_drop_common::IpPort;
 pub mod firewall {
 tonic::include_proto!("firewall");
 }
-pub mod google {
-    pub mod protobuf {
-        tonic::include_proto!("google.protobuf");
-    }
-}
+
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
 use crate::firewall::FirewallStatus;
-use google::protobuf::Empty;
+use prost_types::Empty;
 // Supprimez ce bloc, car tonic::include_proto!("firewall") s'en charge.
 // pub mod firewall {
 //     include!(concat!(env!("OUT_DIR"), "/firewall.rs"));

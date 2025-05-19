@@ -31,6 +31,7 @@ fn main() -> anyhow::Result<()> {
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
 
     tonic_build::configure()
+        .compile_well_known_types(true)
         .build_server(true)
         .build_client(true)
         .out_dir(&out_dir)

@@ -24,16 +24,16 @@ fn main() -> anyhow::Result<()> {
     let proto_include = "../proto";
 
     // Inclure le répertoire contenant google/protobuf/empty.proto
-    let prost_types_include = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?).join("path/to/prost-types/src");
+    // Tu dois avoir "../proto/include/google/protobuf/empty.proto"
+    let google_include = PathBuf::from("../proto/include");
 
-    // Dossier de sortie = src/generated
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
 
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
         .out_dir(&out_dir)
-        .compile(&[proto_file], &[proto_include, prost_types_include.to_str().unwrap()])
+        .compile(&[proto_file], &[proto_include, google_include])
         .context("Échec de la compilation du fichier .proto")?;
 
     Ok(())

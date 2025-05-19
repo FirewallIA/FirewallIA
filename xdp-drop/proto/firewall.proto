@@ -1,13 +1,12 @@
 syntax = "proto3";
 
+import "google/protobuf/empty.proto";
 
 package firewall;
 
 service FirewallService {
-    rpc GetStatus (Empty) returns (FirewallStatus);
+    rpc GetStatus (google.protobuf.Empty) returns (FirewallStatus);
 }
-
-message Empty {}
 
 message FirewallStatus {
     string status = 1; // "UP" ou "DOWN"

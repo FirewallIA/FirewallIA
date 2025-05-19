@@ -10,7 +10,6 @@ use clap::Parser;
 use flexi_logger::{Duplicate, FileSpec, Logger};
 use log::{info, warn};
 use tokio::signal;
-use prost_types::Empty;
 use tonic::{transport::Server, Request, Response, Status};
 use xdp_drop_common::IpPort;
 
@@ -41,7 +40,7 @@ pub struct MyFirewallService;
 impl FirewallService for MyFirewallService {
     async fn get_status(
         &self,
-        _request: Request<Empty>, // Doit utiliser le Empty importé
+        _request: Request<>, // Doit utiliser le Empty importé
     ) -> Result<Response<firewall::FirewallStatus>, Status> { // firewall::FirewallStatus est correct
         let status = firewall::FirewallStatus {
             status: "UP".to_string(),

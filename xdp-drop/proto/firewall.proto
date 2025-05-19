@@ -1,7 +1,5 @@
 syntax = "proto3";
 
-import "google/protobuf/empty.proto";
-
 package firewall;
 
 service FirewallService {
@@ -11,3 +9,5 @@ service FirewallService {
 message FirewallStatus {
     string status = 1; // "UP" ou "DOWN"
 }
+
+message Empty {}

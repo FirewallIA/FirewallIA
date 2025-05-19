@@ -34,7 +34,7 @@ fn main() -> anyhow::Result<()> {
         .build_server(true)
         .build_client(true)
         .out_dir(&out_dir)
-        .compile(&[proto_file], &[proto_include, google_include_str])
+        .compile(&[proto_file], &[proto_include])
         .context("Échec de la compilation du fichier .proto")?;
 
     Ok(())

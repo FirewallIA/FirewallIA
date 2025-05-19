@@ -13,4 +13,3 @@ clap = { version = "4", features = ["derive"], optional = true } # Si vous voule
 [build-dependencies]
 tonic-build = "0.11" # Version alignée avec tonic
 anyhow = "1"         # Pour la gestion des erreurs dans build.rs
-Use code with c

@@ -12,16 +12,21 @@ use log::{info, warn};
 use tokio::signal;
 use tonic::{transport::Server, Request, Response, Status};
 use xdp_drop_common::IpPort;
-use crate::firewall::firewall_service_server::FirewallService;
-use crate::firewall::firewall_service_server::FirewallServiceServer;
-use crate::firewall::Empty; 
 
 // Import du proto compilé gRPC
+// Ceci va créer les modules `firewall` et `google` (avec `protobuf` dedans)
+// à la racine de votre crate (ou du module courant si utilisé dans un sous-module).
 tonic::include_proto!("firewall");
 
-pub mod firewall {
-    include!(concat!(env!("OUT_DIR"), "/firewall.rs"));
-}
+// Maintenant, vous pouvez importer FirewallService, FirewallStatus, etc. depuis le module `firewall`
+// et Empty depuis `google::protobuf`
+use firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
+use google::protobuf::Empty; // Correction ici !
+
+// Supprimez ce bloc, car tonic::include_proto!("firewall") s'en charge.
+// pub mod firewall {
+//     include!(concat!(env!("OUT_DIR"), "/firewall.rs"));
+// }
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -36,14 +41,15 @@ pub struct MyFirewallService;
 impl FirewallService for MyFirewallService {
     async fn get_status(
         &self,
-        _request: Request<Empty>,
-    ) -> Result<Response<firewall::FirewallStatus>, Status> {
+        _request: Request<Empty>, // Doit utiliser le Empty importé
+    ) -> Result<Response<firewall::FirewallStatus>, Status> { // firewall::FirewallStatus est correct
         let status = firewall::FirewallStatus {
             status: "UP".to_string(),
         };
         Ok(Response::new(status))
     }
 }
+
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {

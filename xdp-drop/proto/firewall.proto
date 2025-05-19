@@ -3,7 +3,7 @@ syntax = "proto3";
 package firewall;
 
 service FirewallService {
-    rpc GetStatus (google.protobuf.Empty) returns (FirewallStatus);
+    rpc GetStatus (Empty) returns (FirewallStatus);
 }
 
 message FirewallStatus {

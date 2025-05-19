@@ -22,7 +22,7 @@ tonic::include_proto!("firewall");
 
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
 use crate::firewall::FirewallStatus;
-use crate::firewall::google::protobuf::Empty;
+use prost_types::Empty;
 // Supprimez ce bloc, car tonic::include_proto!("firewall") s'en charge.
 // pub mod firewall {
 //     include!(concat!(env!("OUT_DIR"), "/firewall.rs"));

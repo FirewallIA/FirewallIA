@@ -16,8 +16,9 @@ use xdp_drop_common::IpPort;
 // Import du proto compilé gRPC
 // Ceci va créer les modules `firewall` et `google` (avec `protobuf` dedans)
 // à la racine de votre crate (ou du module courant si utilisé dans un sous-module).
+pub mod firewall {
 tonic::include_proto!("firewall");
-
+}
 // Maintenant, vous pouvez importer FirewallService, FirewallStatus, etc. depuis le module `firewall`
 // et Empty depuis `google::protobuf`
 use firewall::firewall_service_server::{FirewallService, FirewallServiceServer};

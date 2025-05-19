@@ -14,7 +14,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use xdp_drop_common::IpPort;
 use crate::firewall::firewall_service_server::FirewallService;
 use crate::firewall::firewall_service_server::FirewallServiceServer;
-use crate::firewall::Empty;
+//use crate::firewall::Empty;
 
 // Import du proto compilé gRPC
 tonic::include_proto!("firewall");

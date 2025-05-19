@@ -35,6 +35,7 @@ fn main() -> anyhow::Result<()> {
         .build_server(true)
         .build_client(true)
         .out_dir(&out_dir)
+        .extern_path(".google.protobuf", "::prost_types")
         .compile(&[proto_file], &[proto_include, google_include_str])
         .context("Échec de la compilation du fichier .proto")?;
 

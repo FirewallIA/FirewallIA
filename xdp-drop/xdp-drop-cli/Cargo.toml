@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tonic = "0.7"       # Pour gRPC en Rust
-prost = "0.10"      # Pour gérer les messages protobuf
+tonic = "0.11"       # Pour gRPC en Rust
+prost = "0.12.6"      # Pour gérer les messages protobuf
 tokio = { version = "1", features = ["full"] }  # Asynchronous runtime

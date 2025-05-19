@@ -21,8 +21,8 @@ tonic::include_proto!("firewall");
 }
 // Maintenant, vous pouvez importer FirewallService, FirewallStatus, etc. depuis le module `firewall`
 // et Empty depuis `google::protobuf`
-use firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
-use firewall::FirewallStatus;
+use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
+use crate::firewall::FirewallStatus;
 // Supprimez ce bloc, car tonic::include_proto!("firewall") s'en charge.
 // pub mod firewall {
 //     include!(concat!(env!("OUT_DIR"), "/firewall.rs"));

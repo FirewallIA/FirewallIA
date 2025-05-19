@@ -21,6 +21,7 @@ tonic::include_proto!("firewall");
 }
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
 use crate::firewall::FirewallStatus;
+use crate::google::protobuf::Empty;
 // Supprimez ce bloc, car tonic::include_proto!("firewall") s'en charge.
 // pub mod firewall {
 //     include!(concat!(env!("OUT_DIR"), "/firewall.rs"));
@@ -39,7 +40,7 @@ pub struct MyFirewallService;
 impl FirewallService for MyFirewallService {
     async fn get_status(
         &self,
-        _request: Request<crate::firewall::Empty>, // Doit utiliser le Empty importé
+        _request: Request<crate::google::protobuf::Empty;>, // Doit utiliser le Empty importé
     ) -> Result<Response<firewall::FirewallStatus>, Status> { // firewall::FirewallStatus est correct
         let status = firewall::FirewallStatus {
             status: "UP".to_string(),

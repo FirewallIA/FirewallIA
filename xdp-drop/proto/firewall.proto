@@ -5,7 +5,7 @@ package firewall;
 import "google/protobuf/empty.proto";
 
 service FirewallService {
-    rpc GetStatus (Empty) returns (FirewallStatus);
+    rpc GetStatus (google.protobuf.Empty) returns (FirewallStatus);
 }
 
 message FirewallStatus {

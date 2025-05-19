@@ -10,6 +10,7 @@ use clap::Parser;
 use flexi_logger::{Duplicate, FileSpec, Logger};
 use log::{info, warn};
 use tokio::signal;
+use prost_types::Empty;
 use tonic::{transport::Server, Request, Response, Status};
 use xdp_drop_common::IpPort;
 

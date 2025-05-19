@@ -14,7 +14,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use xdp_drop_common::IpPort;
 use crate::firewall::firewall_service_server::FirewallService;
 use crate::firewall::firewall_service_server::FirewallServiceServer;
-use crate::firewall::Empty;
+use std::io::Empty
 
 // Import du proto compilé gRPC
 tonic::include_proto!("firewall");
@@ -36,7 +36,7 @@ pub struct MyFirewallService;
 impl FirewallService for MyFirewallService {
     async fn get_status(
         &self,
-        _request: Request<firewall::Empty>,
+        _request: Request<Empty>,
     ) -> Result<Response<firewall::FirewallStatus>, Status> {
         let status = firewall::FirewallStatus {
             status: "UP".to_string(),

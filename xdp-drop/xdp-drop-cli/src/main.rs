@@ -12,7 +12,7 @@ pub mod google {
 
 // Importer les types nécessaires
 use firewall::firewall_service_client::FirewallServiceClient;
-use firewall::{RuleInfo, RuleListResponse}; // Importer les nouveaux types
+use firewall::{RuleInfo, RuleListResponse, RuleData, CreateRuleRequest, CreateRuleResponse}; // Importer les nouveaux types
 use google::protobuf::Empty;
 use clap::Parser;
 

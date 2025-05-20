@@ -7,6 +7,7 @@ import "google/protobuf/empty.proto";
 service FirewallService {
     rpc GetStatus (google.protobuf.Empty) returns (FirewallStatus);
     rpc ListRules (google.protobuf.Empty) returns (RuleListResponse); // Nouvelle RPC
+    rpc CreateRule (CreateRuleRequest) returns (CreateRuleResponse);
 }
 
 message FirewallStatus {

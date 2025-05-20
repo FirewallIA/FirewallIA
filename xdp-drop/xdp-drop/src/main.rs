@@ -156,21 +156,22 @@ async fn main() -> Result<(), anyhow::Error> {
         .context("Map BLOCKLIST introuvable dans eBPF")?)?;
 
     // Connexion PostgreSQL
-    let (client, connection) = tokio_postgres::connect(
+    let (pg_client, connection) = tokio_postgres::connect(
         "host=localhost user=postgres password=postgres dbname=firewall",
         tokio_postgres::NoTls,
     )
     .await
     .context("Erreur de connexion à PostgreSQL")?;
+    info!("Connecté à PostgreSQL.");
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {
-            eprintln!("Erreur de connexion PostgreSQL : {e}");
+            eprintln!("Erreur de connexion PostgreSQL en tâche de fond : {e}");
         }
     });
 
     // Lecture des règles
-    let rows = client
+    let rows = pg_client
         .query(
             "SELECT id, source_ip, dest_ip, source_port, dest_port, action, protocol, usage_count FROM rules",
             &[],
@@ -226,11 +227,16 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     // Serveur gRPC
-    let grpc_addr = "[::1]:50051".parse()
-        .context("Adresse gRPC invalide")?;
-    let firewall_service = MyFirewallService::default();
-    let grpc_server = Server::builder()
-        .add_service(FirewallServiceServer::new(firewall_service))
+    let grpc_addr = "[::1]:50051".parse().context("Adresse gRPC invalide")?;
+
+    // ICI : Initialisation manuelle de MyFirewallService
+    let firewall_service = MyFirewallService { 
+        db_client: pg_client.clone() // pg_client est le Client connecté à PostgreSQL
+    };
+    info!("Service Firewall gRPC en cours de création...");
+
+    let grpc_server_future = Server::builder()
+        .add_service(FirewallServiceServer::new(firewall_service)) // On passe l'instance créée
         .serve(grpc_addr);
 
     tokio::spawn(async move {

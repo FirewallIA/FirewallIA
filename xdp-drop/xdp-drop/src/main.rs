@@ -118,32 +118,43 @@ async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
 
     // Logger
-       Logger::try_with_str("info")?
-        .log_to_file(
-            FileSpec::default()
-                .directory("logs")
-                .basename("firewall")
-                .suppress_timestamp(),
-        )
-        .append()
-        .duplicate_to_stdout(Duplicate::Info)
-        .start()
-        .context("Erreur lors de l'initialisation du logger")?;
-        info!("Logger initialisé.");
+    Logger::try_with_str("info")?
+    .log_to_file(
+        FileSpec::default()
+            .directory("logs")
+            .basename("firewall")
+            .suppress_timestamp(),
+    )
+    .append()
+    .duplicate_to_stdout(Duplicate::Info)
+    .start()
+    .context("Erreur lors de l'initialisation du logger")?;
+    info!("Logger initialisé.");
 
     // Chargement du programme eBPF
-     let mut bpf = Bpf::load(include_bytes_aligned!(concat!(
+    let mut bpf = Bpf::load(include_bytes_aligned!(concat!(
         env!("OUT_DIR"),
         "/xdp-drop"
     )))
-    .context("Failed to load BPF program")?;
+    .context("Failed to load BPF program")?; // Ok, Bpf::load retourne Result
+
     if let Err(e) = EbpfLogger::init(&mut bpf) {
-        warn!("eBPF logger not initialized: {}", e);
+        warn!("eBPF logger not initialized: {}", e); // Ok, c'est un Result
     }
-    let program: &mut Xdp = bpf.program_mut("xdp_firewall")?.try_into()?;
-    program.load()?;
-    program.attach(&opt.iface, XdpFlags::default())?;
+
+    let program: &mut Xdp = bpf
+        .program_mut("xdp_firewall") // Ceci retourne Option<&mut Program>
+        .ok_or_else(|| anyhow::anyhow!("Programme eBPF 'xdp_firewall' introuvable dans BPF"))? // Convertit Option en Result
+        .try_into() // try_into sur Program retourne Result<&mut Xdp, _>
+        .context("Erreur de conversion du programme en Xdp")?;
+    
+    program.load().context("Erreur de chargement du programme XDP")?; // load retourne Result
+    program
+        .attach(&opt.iface, XdpFlags::default()) // attach retourne Result
+        .context(format!("Erreur d'attachement du programme XDP à l'interface {}", opt.iface))?;
+    
     info!("eBPF program loaded and attached to {}.", opt.iface);
+
 
     // Blocage d'IP
     let mut blocklist: HashMap<_, IpPort, u32> = HashMap::try_from(bpf.map_mut("BLOCKLIST")?)?;

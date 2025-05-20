@@ -121,14 +121,14 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
         Commands::ListRules => { // Gérer la nouvelle commande
             handle_list_rules(&mut client).await?;
         }
-        Commands::CreateRule => {
+        Commands::CreateRule => [
             source_ip,
             dest_ip,
             source_port,
             dest_port,
             action,
             protocol,
-        } => {
+         ] => {
             let rule_data = RuleData {
                 source_ip,
                 dest_ip,

@@ -122,7 +122,11 @@ async fn main() -> Result<(), anyhow::Error> {
     info!("Logger initialisé.");
 
     // Chargement du programme eBPF
-    let mut bpf = Bpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/xdp-drop")))CONTEXT("Failed to load BPF program")?;
+     let mut bpf = Bpf::load(include_bytes_aligned!(concat!(
+        env!("OUT_DIR"),
+        "/xdp-drop"
+    )))
+    .context("Failed to load BPF program")?;
     if let Err(e) = EbpfLogger::init(&mut bpf) {
         warn!("eBPF logger not initialized: {}", e);
     }

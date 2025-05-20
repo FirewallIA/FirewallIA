@@ -121,15 +121,17 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
         Commands::ListRules => { // Gérer la nouvelle commande
             handle_list_rules(&mut client).await?;
         }
-        Commands::CreateRule => [
-            source_ip,
+        Commands::CreateRule { // Variante de l'enum
+            source_ip,         // Déstructuration des champs nommés
             dest_ip,
             source_port,
             dest_port,
             action,
             protocol,
-         ] => {
-            let rule_data = RuleData {
+        } => {                 // Bloc de code pour cette branche
+            // Le compilateur va vous dire que RuleData n'est pas trouvé ici ensuite
+            // car il n'est pas importé.
+            let rule_data = firewall::RuleData { // <--- Préciser firewall::RuleData
                 source_ip,
                 dest_ip,
                 source_port,

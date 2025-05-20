@@ -118,8 +118,18 @@ async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
 
     // Logger
-    Logger::try_with_str("info")? /* ... */ .context("Erreur lors de l'initialisation du logger")?;
-    info!("Logger initialisé.");
+       Logger::try_with_str("info")?
+        .log_to_file(
+            FileSpec::default()
+                .directory("logs")
+                .basename("firewall")
+                .suppress_timestamp(),
+        )
+        .append()
+        .duplicate_to_stdout(Duplicate::Info)
+        .start()
+        .context("Erreur lors de l'initialisation du logger")?;
+        info!("Logger initialisé.");
 
     // Chargement du programme eBPF
      let mut bpf = Bpf::load(include_bytes_aligned!(concat!(

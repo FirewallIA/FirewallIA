@@ -41,7 +41,7 @@ pub struct MyFirewallService {
 
 // Fonction pour récupérer et formater les règles
 async fn fetch_and_format_rules_from_db(
-    db_client: &Arc<tokio_postgres::Client>, (ou &tokio_postgres::Client si on déréférence avant l'appel)
+    db_client: &Arc<tokio_postgres::Client>,
 ) -> Result<Vec<RuleInfo>, anyhow::Error> {
     // db_client est déjà une référence à un Arc, donc on peut l'utiliser directement
     // ou le déréférencer une fois: let client_ref = &**db_client;

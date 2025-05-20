@@ -157,7 +157,10 @@ async fn main() -> Result<(), anyhow::Error> {
 
 
     // Blocage d'IP
-    let mut blocklist: HashMap<_, IpPort, u32> = HashMap::try_from(bpf.map_mut("BLOCKLIST")?)?;
+    let mut blocklist: HashMap<_, IpPort, u32> =
+        HashMap::try_from(bpf.map_mut("BLOCKLIST")
+        .context("Map BLOCKLIST introuvable dans eBPF")?)?;
+
 
     // Connexion PostgreSQL
     let (pg_client_raw, connection) = tokio_postgres::connect( // Renommé pour clarté

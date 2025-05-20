@@ -36,7 +36,6 @@ struct Opt {
     iface: String,
 }
 
-#[derive(Default)]
 pub struct MyFirewallService {
     db_client: tokio_postgres::Client,
 }

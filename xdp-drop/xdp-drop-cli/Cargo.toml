@@ -10,7 +10,7 @@ tonic = "0.11"   # Version alignée avec le serveur
 prost = "0.12"   # Version alignée avec le serveur
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 anyhow = "1"
-clap = { version = "4", features = ["derive"], optional = true } # Si vous voulez l'utiliser plus tard
+clap = { version = "4", features = ["derive"]} # Si vous voulez l'utiliser plus tard
 
 [build-dependencies]
 tonic-build = "0.11" # Version alignée avec tonic

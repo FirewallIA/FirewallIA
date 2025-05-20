@@ -25,7 +25,7 @@ pub mod google {
 }
 
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
-use crate::firewall::{FirewallStatus, RuleInfo, RuleListResponse};
+use crate::firewall::{FirewallStatus, RuleInfo, RuleListResponse, CreateRuleRequest, CreateRuleResponse, RuleData};
 use crate::google::protobuf::Empty;
 
 
@@ -111,6 +111,111 @@ impl FirewallService for MyFirewallService {
             }
         }
     }
+    async fn create_rule(
+        &self,
+        request: Request<CreateRuleRequest>,
+    ) -> Result<Response<CreateRuleResponse>, tonic::Status> {
+        let req_data = request.into_inner();
+        info!("gRPC: Appel de CreateRule reçu pour : {:?}", req_data.rule);
+
+        // 1. Validation (exemple simple, à étoffer)
+        let rule_to_create = match req_data.rule {
+            Some(r) => r,
+            None => {
+                return Err(tonic::Status::invalid_argument("Données de règle manquantes dans la requête"));
+            }
+        };
+
+        if rule_to_create.source_ip.is_empty() || rule_to_create.dest_ip.is_empty() {
+            return Err(tonic::Status::invalid_argument("Les adresses IP source et destination ne peuvent pas être vides."));
+        }
+        // Ajoutez d'autres validations : format IP, format port, valeurs d'action/protocole valides, etc.
+        // Exemple de validation d'action
+        let action_str = rule_to_create.action.to_lowercase();
+        if action_str != "allow" && action_str != "deny" {
+            return Err(tonic::Status::invalid_argument(
+                "Action invalide. Doit être 'allow' ou 'deny'.",
+            ));
+        }
+        
+        // Convertir les ports string en Option<i32> pour la DB, ou gérer le "*"
+        let source_port_db: Option<i32> = rule_to_create.source_port.parse().ok();
+        let dest_port_db: Option<i32> = rule_to_create.dest_port.parse().ok();
+
+
+        // 2. Insertion dans la base de données PostgreSQL
+        // La colonne 'id' est SERIAL, donc elle sera auto-générée. 'usage_count' aura sa valeur par défaut (0).
+        let created_rule_id: i32;
+        match self.db_client.query_one(
+            "INSERT INTO rules (source_ip, dest_ip, source_port, dest_port, action, protocol) \
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            &[
+                &rule_to_create.source_ip,
+                &rule_to_create.dest_ip,
+                &source_port_db,    // Utiliser les Option<i32>
+                &dest_port_db,      // Utiliser les Option<i32>
+                &action_str,        // Utiliser la version validée/normalisée
+                &rule_to_create.protocol,
+            ],
+        ).await {
+            Ok(row) => {
+                created_rule_id = row.get(0);
+                info!("Règle insérée dans la DB avec l'ID: {}", created_rule_id);
+            }
+            Err(e) => {
+                log::error!("Erreur lors de l'insertion de la règle dans la DB: {}", e);
+                return Err(tonic::Status::internal(format!(
+                    "Échec de la création de la règle en base de données: {}", e
+                )));
+            }
+        }
+
+        // 3. (Optionnel mais important) Insertion dans la map eBPF `BLOCKLIST`
+        // Vous aurez besoin d'un accès mutable à la map BPF.
+        // Cela complique un peu les choses car MyFirewallService ne l'a pas actuellement.
+        // Solutions possibles :
+        //    a) Passer un `Arc<Mutex<HashMap<_, IpPort, u32>>>` à MyFirewallService (si HashMap est celle d'Aya).
+        //    b) Utiliser un canal (mpsc) pour envoyer une commande de mise à jour à la tâche principale qui gère BPF.
+        //    c) Recharger toutes les règles depuis la DB vers BPF (moins efficace pour une seule règle).
+        //
+        // Pour l'instant, je vais omettre cette partie pour garder l'exemple focalisé sur gRPC et DB.
+        // MAIS C'EST UNE ÉTAPE CRUCIALE pour que la règle soit active dans le firewall.
+        // Vous devrez trouver un moyen de mettre à jour la map `blocklist` partagée.
+
+        // Exemple de logique pour BPF (si vous aviez accès à `blocklist`):
+        /*
+        match (rule_to_create.source_ip.parse::<std::net::Ipv4Addr>(), rule_to_create.dest_ip.parse::<std::net::Ipv4Addr>()) {
+            (Ok(ip_src), Ok(ip_dst)) => {
+                let port_for_bpf = if rule_to_create.dest_port == "*" { 0 } else { rule_to_create.dest_port.parse().unwrap_or(0) };
+                let key = IpPort {
+                    addr: u32::from(ip_src).to_be(),
+                    addr_dest: u32::from(ip_dst).to_be(),
+                    port: port_for_bpf,
+                    _pad: 0,
+                };
+                const ACTION_DENY_U32: u32 = 1; // Assurez-vous que ces constantes sont accessibles
+                const ACTION_ALLOW_U32: u32 = 2;
+                let action_value_bpf = if action_str == "deny" { ACTION_DENY_U32 } else { ACTION_ALLOW_U32 };
+
+                // ICI, il faudrait un accès à la map BPF
+                // blocklist_map_ref.insert(key, action_value_bpf, 0).map_err(|e| ...)?;
+                info!("Règle (potentiellement) insérée/mise à jour dans la map BPF.");
+            }
+            _ => {
+                warn!("IP invalide pour l'insertion BPF, règle ID {}: {} -> {}", created_rule_id, rule_to_create.source_ip, rule_to_create.dest_ip);
+            }
+        }
+        */
+
+
+        // 4. Retourner la réponse
+        let response = CreateRuleResponse {
+            created_rule_id,
+            message: format!("Règle créée avec succès avec l'ID {}.", created_rule_id),
+        };
+        Ok(Response::new(response))
+    }
+
 }
 
 #[tokio::main]

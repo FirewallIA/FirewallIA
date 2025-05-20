@@ -34,6 +34,20 @@ enum Commands {
     /// Liste toutes les règles actives du firewall
     ListRules, // Nouvelle sous-commande
     // ... futures commandes
+    CreateRule {
+        #[clap(long)]
+        source_ip: String,
+        #[clap(long)]
+        dest_ip: String,
+        #[clap(long, default_value = "*")]
+        source_port: String,
+        #[clap(long, default_value = "*")]
+        dest_port: String,
+        #[clap(long)]
+        action: String, // "allow" ou "deny"
+        #[clap(long, default_value = "any")]
+        protocol: String,
+    },
 }
 
 async fn handle_get_status(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
@@ -70,6 +84,24 @@ async fn handle_list_rules(client: &mut FirewallServiceClient<tonic::transport::
     Ok(())
 }
 
+async fn handle_create_rule(
+     client: &mut FirewallServiceClient<tonic::transport::Channel>,
+    rule_data: RuleData,
+) -> anyhow::Result<()> {
+    let request_payload = CreateRuleRequest {
+        rule: Some(rule_data),
+    };
+    let request = tonic::Request::new(request_payload);
+
+    let response = client.create_rule(request).await?.into_inner();
+
+    println!(
+        "Réponse du serveur: ID={}, Message='{}'",
+        response.created_rule_id, response.message
+    );
+    Ok(())
+}
+
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
@@ -88,6 +120,24 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
         }
         Commands::ListRules => { // Gérer la nouvelle commande
             handle_list_rules(&mut client).await?;
+        }
+        Commands::CreateRules => {
+            source_ip,
+            dest_ip,
+            source_port,
+            dest_port,
+            action,
+            protocol,
+        } => {
+            let rule_data = RuleData {
+                source_ip,
+                dest_ip,
+                source_port,
+                dest_port,
+                action,
+                protocol,
+            };
+            handle_create_rule(&mut client, rule_data).await?;
         }
     }
 

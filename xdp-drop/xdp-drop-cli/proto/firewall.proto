@@ -29,3 +29,23 @@ message RuleInfo {
 message RuleListResponse {
     repeated RuleInfo rules = 1;
 }
+
+// Message pour la requête de création de règle
+message RuleData { 
+    string source_ip = 1;
+    string dest_ip = 2;
+    string source_port = 3; // Peut être "*" ou un numéro
+    string dest_port = 4;   // Peut être "*" ou un numéro
+    string action = 5;      // "ALLOW", "DENY"
+    string protocol = 6;    // "TCP", "UDP", "ANY", etc.
+}
+
+message CreateRuleRequest {
+    RuleData rule = 1;
+}
+
+// Message pour la réponse de création de règle
+message CreateRuleResponse {
+    int32 created_rule_id = 1; // L'ID de la règle nouvellement créée
+    string message = 2;        // Message de statut, ex: "Règle créée avec succès"
+}

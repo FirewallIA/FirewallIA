@@ -91,9 +91,8 @@ impl FirewallService for MyFirewallService {
         };
         Ok(Response::new(status))
     }
-}
 
-  async fn list_rules(
+    async fn list_rules(
         &self,
         _request: Request<crate::google::protobuf::Empty>,
     ) -> Result<Response<RuleListResponse>, tonic::Status> {
@@ -112,6 +111,9 @@ impl FirewallService for MyFirewallService {
             }
         }
     }
+}
+
+  
 
 
 #[tokio::main]

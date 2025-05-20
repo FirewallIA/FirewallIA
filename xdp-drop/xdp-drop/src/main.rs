@@ -25,12 +25,10 @@ pub mod google {
 }
 
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
-use crate::firewall::FirewallStatus;
+use crate::firewall::{FirewallStatus, RuleInfo, RuleListResponse};
 use crate::google::protobuf::Empty;
-// Supprimez ce bloc, car tonic::include_proto!("firewall") s'en charge.
-// pub mod firewall {
-//     include!(concat!(env!("OUT_DIR"), "/firewall.rs"));
-// }
+
+
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -39,7 +37,48 @@ struct Opt {
 }
 
 #[derive(Default)]
-pub struct MyFirewallService;
+pub struct MyFirewallService {
+    db_client: tokio_postgres::Client,
+}
+
+
+// Fonction pour récupérer et formater les règles (sera appelée par main et ListRules)
+async fn fetch_and_format_rules_from_db(
+    db_client: &tokio_postgres::Client,
+) -> Result<Vec<RuleInfo>, anyhow::Error> {
+    let rows = db_client
+        .query(
+            "SELECT id, source_ip, dest_ip, source_port, dest_port, action, protocol, usage_count FROM rules",
+            &[],
+        )
+        .await
+        .context("Erreur lors de l'exécution du SELECT sur rules")?;
+
+    let mut rule_infos = Vec::new();
+
+    for row in rows {
+        let id: i32 = row.get("id");
+        let source_ip_str: String = row.get("source_ip");
+        let dest_ip_str: String = row.get("dest_ip");
+        let source_port_opt: Option<i32> = row.get("source_port");
+        let dest_port_opt: Option<i32> = row.get("dest_port");
+        let action_str: String = row.get("action");
+        let protocol_opt: Option<String> = row.get("protocol");
+        let usage_count_val: i32 = row.get("usage_count");
+
+        rule_infos.push(RuleInfo {
+            id,
+            source_ip: source_ip_str,
+            dest_ip: dest_ip_str,
+            source_port: source_port_opt.map_or("*".to_string(), |p| p.to_string()),
+            dest_port: dest_port_opt.map_or("*".to_string(), |p| p.to_string()),
+            action: action_str,
+            protocol: protocol_opt.unwrap_or_else(|| "any".to_string()),
+            usage_count: usage_count_val,
+        });
+    }
+    Ok(rule_infos)
+}
 
 #[tonic::async_trait]
 impl FirewallService for MyFirewallService {
@@ -51,6 +90,27 @@ impl FirewallService for MyFirewallService {
             status: "UP".to_string(),
         };
         Ok(Response::new(status))
+    }
+}
+
+  async fn list_rules(
+        &self,
+        _request: Request<crate::google::protobuf::Empty>,
+    ) -> Result<Response<RuleListResponse>, tonic::Status> {
+        info!("gRPC: Appel de ListRules reçu");
+        match fetch_and_format_rules_from_db(&self.db_client).await {
+            Ok(rules) => {
+                let response = RuleListResponse { rules };
+                Ok(Response::new(response))
+            }
+            Err(e) => {
+                log::error!("Erreur lors de la récupération des règles pour gRPC: {}", e);
+                Err(tonic::Status::internal(format!(
+                    "Échec de la récupération des règles: {}",
+                    e
+                )))
+            }
+        }
     }
 }
 

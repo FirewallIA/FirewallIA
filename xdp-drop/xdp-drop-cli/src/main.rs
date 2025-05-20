@@ -12,75 +12,84 @@ pub mod google {
 
 // Importer les types nécessaires
 use firewall::firewall_service_client::FirewallServiceClient;
-use google::protobuf::Empty; // Maintenant cela devrait fonctionner
-
+use firewall::{RuleInfo, RuleListResponse}; // Importer les nouveaux types
+use google::protobuf::Empty;
 use clap::Parser;
 
+/// Une CLI simple pour interagir avec le service Firewall gRPC
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
     #[clap(subcommand)]
     command: Commands,
+    /// Adresse du serveur gRPC du firewall
+    #[clap(long, default_value = "http://[::1]:50051")]
+    server_addr: String,
 }
 
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
     /// Récupère le statut actuel du firewall
     Status,
-    // Vous pourrez ajouter d'autres sous-commandes ici
-    // Par exemple:
-    // /// Ajoute une nouvelle règle au firewall
-    // AddRule {
-    //     #[clap(long)]
-    //     ip: String,
-    //     #[clap(long)]
-    //     port: u16,
-    // },
+    /// Liste toutes les règles actives du firewall
+    ListRules, // Nouvelle sous-commande
+    // ... futures commandes
 }
 
-
-// Fonction pour gérer l'action "status"
-async fn handle_get_status(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_get_status(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
     let request = tonic::Request::new(Empty {});
-    let response = client.get_status(request).await?;
-    println!("Firewall status: {}", response.into_inner().status);
+    let response = client.get_status(request).await?.into_inner();
+    println!("Firewall status: {}", response.status);
     Ok(())
 }
 
-// Exemple d'une autre action (ne fait rien pour l'instant, juste pour montrer la structure)
-// async fn handle_add_rule(client: &mut FirewallServiceClient<tonic::transport::Channel>, ip: String, port: u16) -> Result<(), Box<dyn std::error::Error>> {
-//     println!("Demande d'ajout de règle pour IP: {}, Port: {}", ip, port);
-//     // Ici, vous feriez l'appel gRPC correspondant
-//     // Par exemple, si vous aviez une méthode AddRule dans votre .proto :
-//     // let request = tonic::Request::new(firewall::AddRuleRequest { ip_address: ip, port_number: port as u32 });
-//     // client.add_rule(request).await?;
-//     // println!("Règle ajoutée (simulation).");
-//     Ok(())
-// }
+// Nouvelle fonction pour gérer la commande list-rules
+async fn handle_list_rules(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
+    let request = tonic::Request::new(Empty {});
+    let response = client.list_rules(request).await?.into_inner();
+
+    if response.rules.is_empty() {
+        println!("Aucune règle active trouvée.");
+    } else {
+        println!("Règles actives du firewall :");
+        println!("{:<5} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
+                 "ID", "Source IP", "Dest IP", "Src Port", "Dest Port", "Action", "Proto", "Hits");
+        println!("{}", "-".repeat(100)); // Séparateur
+        for rule in response.rules {
+            println!("{:<5} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
+                     rule.id,
+                     rule.source_ip,
+                     rule.dest_ip,
+                     rule.source_port,
+                     rule.dest_port,
+                     rule.action,
+                     rule.protocol,
+                     rule.usage_count);
+        }
+    }
+    Ok(())
+}
 
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
     let cli = Cli::parse();
 
-    // Se connecter au serveur gRPC une seule fois
-    // Note : Vous pourriez vouloir rendre l'adresse du serveur configurable via clap aussi !
-    let mut client = FirewallServiceClient::connect("http://[::1]:50051").await
+    let mut client = FirewallServiceClient::connect(cli.server_addr.clone()).await
         .map_err(|e| {
-            eprintln!("Erreur de connexion au serveur gRPC : {}", e);
-            eprintln!("Assurez-vous que le serveur firewall est lancé sur http://[::1]:50051.");
-            e // retourne l'erreur originale pour la propagation
+            eprintln!("Erreur de connexion au serveur gRPC à l'adresse '{}': {}", cli.server_addr, e);
+            eprintln!("Assurez-vous que le serveur firewall est lancé et accessible.");
+            anyhow::anyhow!("Connexion au serveur gRPC échouée: {}", e) // Convertir en anyhow::Error
         })?;
 
-    // Exécuter la commande appropriée
     match cli.command {
         Commands::Status => {
             handle_get_status(&mut client).await?;
         }
-        // Commands::AddRule { ip, port } => {
-        //     handle_add_rule(&mut client, ip, port).await?;
-        // }
+        Commands::ListRules => { // Gérer la nouvelle commande
+            handle_list_rules(&mut client).await?;
+        }
     }
 
     Ok(())
-} 
+}

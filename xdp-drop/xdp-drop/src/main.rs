@@ -112,7 +112,6 @@ impl FirewallService for MyFirewallService {
             }
         }
     }
-}
 
 
 #[tokio::main]

@@ -6,7 +6,7 @@ use aya::{
     programs::{Xdp, XdpFlags},
 };
 use aya_log::EbpfLogger;
-use clap::Parser;
+use clap::{Parser, CommandFactory};
 use flexi_logger::{Duplicate, FileSpec, Logger};
 use log::{info, warn};
 use std::sync::Arc; 
@@ -31,10 +31,20 @@ use crate::google::protobuf::Empty;
 
 #[derive(Debug, Parser)]
 struct Opt {
-    #[clap(short, long, default_value = "enp0s8")]
+    #[clap(short = 'i', long = "int")]
     iface: String,
 }
 
+fn validate_args(opt: &Opt) {
+    if opt.iface.trim().is_empty() {
+        let mut cmd = Opt::command();
+        eprintln!("Erreur : l'interface réseau est requise.\n");
+        cmd.print_help().unwrap();
+        std::process::exit(1);
+    }
+}
+
+//  RUST_LOG=info cargo run -- -i enp0s1
 pub struct MyFirewallService {
     db_client: Arc<tokio_postgres::Client>,
 }
@@ -291,6 +301,7 @@ impl FirewallService for MyFirewallService {
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
+    validate_args(&opt);
 
     // Logger
     Logger::try_with_str("info")?
@@ -413,6 +424,12 @@ async fn main() -> Result<(), anyhow::Error> {
             protocol.unwrap_or_else(|| "any".to_string()),
         );
     }
+    let program: &mut Xdp =
+        bpf.program_mut("xdp_firewall").unwrap().try_into()?;
+    program.load()?;
+    program.attach(&opt.iface, XdpFlags::default())
+        .context("failed to attach the XDP program with default flags")?;
+
 
     // Serveur gRPC
     let grpc_addr = "[::1]:50051".parse().context("Adresse gRPC invalide")?;

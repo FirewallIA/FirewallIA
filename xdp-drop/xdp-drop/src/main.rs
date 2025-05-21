@@ -25,7 +25,7 @@ pub mod google {
 }
 
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
-use crate::firewall::{FirewallStatus, RuleInfo, RuleListResponse, CreateRuleRequest, CreateRuleResponse, RuleData};
+use crate::firewall::{FirewallStatus, RuleInfo, RuleListResponse, CreateRuleRequest, CreateRuleResponse, RuleData, DeleteRuleRequest, DeleteRuleResponse, RuleDataDelete};
 use crate::google::protobuf::Empty;
 
 
@@ -216,7 +216,76 @@ impl FirewallService for MyFirewallService {
         };
         Ok(Response::new(response))
     }
+    async fn delete_rule(
+        &self,
+        request: Request<DeleteRuleRequest>,
+    ) -> Result<Response<DeleteRuleResponse>, tonic::Status> {
+ let req_data = request.into_inner();
+        let rule_id_to_delete = match req_data.rule {
+            Some(r) => r.id,
+            None => {
+                return Err(tonic::Status::invalid_argument("Données de suppression de règle manquantes."));
+            }
+        };
+        info!("gRPC: Appel de DeleteRule reçu pour l'ID: {}", rule_id_to_delete);
 
+        // 1. Récupérer les infos de la règle depuis la DB pour la clé BPF
+        let rule_details = match self.db_client.query_opt(
+            "SELECT source_ip, dest_ip, dest_port FROM rules WHERE id = $1",
+            &[&rule_id_to_delete]
+        ).await {
+            Ok(Some(row)) => {
+                let source_ip: String = row.get(0);
+                let dest_ip: String = row.get(1);
+                let dest_port: Option<i32> = row.get(2); // dest_port de la DB
+                (source_ip, dest_ip, dest_port)
+            }
+            Ok(None) => {
+                warn!("Tentative de suppression de la règle ID {}, mais elle n'existe pas dans la DB.", rule_id_to_delete);
+                return Err(tonic::Status::not_found(format!(
+                    "Règle avec ID {} non trouvée.", rule_id_to_delete
+                )));
+            }
+            Err(e) => {
+                error!("Erreur lors de la récupération des détails de la règle ID {}: {}", rule_id_to_delete, e);
+                return Err(tonic::Status::internal(format!(
+                    "Échec de la récupération des détails de la règle: {}", e
+                )));
+            }
+        };
+
+        // 2. Tentative de suppression de la map eBPF
+
+        // 3. Suppression de la base de données PostgreSQL
+        match self.db_client.execute(
+            "DELETE FROM rules WHERE id = $1",
+            &[&rule_id_to_delete]
+        ).await {
+            Ok(rows_affected) => {
+                if rows_affected == 0 {
+                    // Cela ne devrait pas arriver si on l'a trouvée à l'étape 1, mais par sécurité
+                    warn!("Tentative de suppression de la règle ID {} (DB), mais 0 lignes affectées (déjà supprimée?).", rule_id_to_delete);
+                    return Err(tonic::Status::not_found(format!(
+                        "Règle avec ID {} non trouvée lors de la suppression finale (ou déjà supprimée).", rule_id_to_delete
+                    )));
+                }
+                info!("Règle ID {} supprimée de la DB ({} lignes affectées).", rule_id_to_delete, rows_affected);
+            }
+            Err(e) => {
+                error!("Erreur lors de la suppression de la règle ID {} de la DB: {}", rule_id_to_delete, e);
+                return Err(tonic::Status::internal(format!(
+                    "Échec de la suppression de la règle en base de données: {}", e
+                )));
+            }
+        }
+
+        // 4. Retourner la réponse
+        let response = DeleteRuleResponse {
+            delete_rule_id: rule_id_to_delete, // Le proto demande delete_rule_id, pas deleted_rule_id
+            message: format!("Règle ID {} supprimée avec succès.", rule_id_to_delete),
+        };
+        Ok(Response::new(response))
+    }
 }
 
 #[tokio::main]

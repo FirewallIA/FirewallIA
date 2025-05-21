@@ -48,6 +48,10 @@ enum Commands {
         #[clap(long, default_value = "any")]
         protocol: String,
     },
+    DeleteRule { // Nouvelle sous-commande
+        #[clap(long)]
+        id: i32,
+    },
 }
 
 async fn handle_get_status(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
@@ -101,7 +105,35 @@ async fn handle_create_rule(
     );
     Ok(())
 }
+async fn handle_delete_rule(
+    client: &mut FirewallServiceClient<tonic::transport::Channel>,
+    rule_id: i32,
+) -> anyhow::Result<()> {
+    let rule_data_delete = RuleDataDelete { id: rule_id };
+    let request_payload = DeleteRuleRequest {
+        rule: Some(rule_data_delete),
+    };
+    let request = tonic::Request::new(request_payload);
 
+    match client.delete_rule(request).await {
+        Ok(response_wrapper) => {
+            let response = response_wrapper.into_inner();
+            println!(
+                "Réponse du serveur: ID Supprimé={}, Message='{}'",
+                response.delete_rule_id, response.message // Utiliser delete_rule_id comme dans le proto
+            );
+        }
+        Err(status) => {
+            eprintln!("Erreur lors de la suppression de la règle ID {}: {}", rule_id, status.message());
+            if status.code() == tonic::Code::NotFound {
+                eprintln!("La règle avec l'ID {} n'a pas été trouvée sur le serveur.", rule_id);
+            }
+            // Convertir tonic::Status en anyhow::Error pour la propagation
+            return Err(anyhow::anyhow!("Échec de la suppression de la règle: {}", status));
+        }
+    }
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
@@ -140,6 +172,9 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
                 protocol,
             };
             handle_create_rule(&mut client, rule_data).await?;
+        }
+        Commands::DeleteRule { id } => { // Gérer la nouvelle commande
+            handle_delete_rule(&mut client, id).await?;
         }
     }
 

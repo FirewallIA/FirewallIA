@@ -8,6 +8,7 @@ service FirewallService {
     rpc GetStatus (google.protobuf.Empty) returns (FirewallStatus);
     rpc ListRules (google.protobuf.Empty) returns (RuleListResponse); // Nouvelle RPC
     rpc CreateRule (CreateRuleRequest) returns (CreateRuleResponse);
+    rpc DeleteRule (DeleteRuleRequest) returns (DeleteRuleResponse);
 }
 
 message FirewallStatus {
@@ -48,5 +49,20 @@ message CreateRuleRequest {
 // Message pour la réponse de création de règle
 message CreateRuleResponse {
     int32 created_rule_id = 1; // L'ID de la règle nouvellement créée
+    string message = 2;        // Message de statut, ex: "Règle créée avec succès"
+}
+
+// Message pour la requête de supression de règle
+message RuleDataDelete { 
+    int32 id = 1;
+}
+
+message DeleteRuleRequest {
+    RuleDataDelete rule = 1;
+}
+
+// Message pour la réponse de supression de règle
+message DeleteRuleResponse {
+    int32 delete_rule_id = 1; // L'ID de la règle nouvellement créée
     string message = 2;        // Message de statut, ex: "Règle créée avec succès"
 }

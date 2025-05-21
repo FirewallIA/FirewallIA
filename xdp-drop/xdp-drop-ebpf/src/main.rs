@@ -10,7 +10,6 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::info;
-
 use core::mem;
 use network_types::{
     eth::{EthHdr, EtherType},
@@ -26,8 +25,10 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
+
 #[map]
 static BLOCKLIST: HashMap<u32, u32> = HashMap::<u32, u32>::with_max_entries(1024, 0);
+
 
 #[xdp]
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
@@ -62,6 +63,7 @@ fn block_ip(address: u32) -> bool {
 
 // REMOVED: decimal_to_hex function
 // REMOVED: format_mac function
+
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     // Ethernet Header
@@ -99,6 +101,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     // IHL is the number of 32-bit words, so multiply by 4 for bytes.
     let transport_offset = EthHdr::LEN + (unsafe { (*ipv4hdr).ihl() } as usize * 4);
 
+
     let src_addr = u32::from_be(unsafe { (*ipv4hdr).src_addr });
     let dst_addr = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
 
@@ -120,11 +123,13 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
                 u16::from_be(unsafe { (*udphdr).dest }),
             )
         }
+
         _ => (0, 0), // No ports for other protocols like ICMP
     };
 
     // Firewall Logic
     let action = if block_ip(src_addr) {
+
         xdp_action::XDP_DROP
     } else {
         xdp_action::XDP_PASS

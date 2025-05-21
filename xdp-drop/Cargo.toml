@@ -1,5 +1,5 @@
 [workspace]
-members = ["xdp-drop", "xdp-drop-common", "xdp-drop-ebpf"]
+members = ["xdp-drop", "xdp-drop-common", "xdp-drop-ebpf", "xdp-drop-cli", "xdp-drop-proto"]
 
 resolver = "2"
 

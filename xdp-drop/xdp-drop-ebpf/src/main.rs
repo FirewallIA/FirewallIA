@@ -17,7 +17,7 @@ use network_types::{
     tcp::TcpHdr,
     udp::UdpHdr,
 };
-use xdp_drop_common::IpPort
+use xdp_drop_common::IpPort;
 
 #[cfg(not(test))]
 #[panic_handler]

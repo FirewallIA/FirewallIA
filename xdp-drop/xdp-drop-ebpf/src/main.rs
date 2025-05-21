@@ -27,7 +27,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 
 
 #[map]
-static BLOCKLIST: HashMap<u32, u32> = HashMap::IpPort, u32>::with_max_entries(1024, 0);
+static BLOCKLIST: HashMap<IpPort, u32> = HashMap::<IpPort, u32>::with_max_entries(1024, 0);
 
 
 #[xdp]

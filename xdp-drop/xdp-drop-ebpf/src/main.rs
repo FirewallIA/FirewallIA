@@ -1,7 +1,7 @@
+// In xdp-drop-ebpf/src/main.rs
 #![no_std]
 #![no_main]
-#![allow(nonstandard_style, dead_code)]
-
+#![allow(nonstandard_style, dead_code)] // dead_code for unused parts during dev
 
 use aya_ebpf::{
     bindings::xdp_action,
@@ -9,35 +9,41 @@ use aya_ebpf::{
     maps::HashMap,
     programs::XdpContext,
 };
-use aya_log_ebpf::info;
+use aya_log_ebpf::info; // For logging from eBPF
 use network_types::{
     eth::{EthHdr, EtherType},
-    ip::Ipv4Hdr,
-    ip::IpProto,
+    ip::{Ipv4Hdr, IpProto},
     tcp::TcpHdr,
     udp::UdpHdr,
 };
-use xdp_drop_common::IpPort;
+use xdp_drop_common::IpPort; // Import your shared struct
 
+// Panic handler (required for no_std)
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-
+// The eBPF map for storing firewall rules.
+// Key: IpPort (source IP, dest IP, dest port)
+// Value: u32 (action code, e.g., 1 for DENY, 2 for ALLOW)
 #[map]
 static BLOCKLIST: HashMap<IpPort, u32> = HashMap::<IpPort, u32>::with_max_entries(1024, 0);
 
+// Action constants (must match userspace definitions)
+const ACTION_DENY_FROM_MAP: u32 = 1;
+const ACTION_ALLOW_FROM_MAP: u32 = 2;
 
 #[xdp]
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
     match try_xdp_firewall(ctx) {
         Ok(ret) => ret,
-        Err(_) => xdp_action::XDP_ABORTED,
+        Err(_) => xdp_action::XDP_ABORTED, // Abort on error (e.g., out-of-bounds access)
     }
 }
 
+// Helper to safely get a pointer to data in the packet.
 #[inline(always)]
 unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     let start = ctx.data();
@@ -45,116 +51,117 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     let len = core::mem::size_of::<T>();
 
     if start + offset + len > end {
-        return Err(());
+        return Err(()); // Offset + size is out of bounds
     }
 
     Ok((start + offset) as *const T)
 }
 
-fn block_ip(address: u32) -> bool {
-    // Using .get() directly is safe in eBPF.
-    // The unsafe block is not strictly needed here for the get call itself,
-    // but might be kept if BLOCKLIST access requires it in other contexts.
-    // However, for clarity, let's assume HashMap::get is safe.
-    unsafe {
-        BLOCKLIST.get(&address).is_some()
-    }
+// Checks the BLOCKLIST map for a matching rule.
+// Returns Some(action_value) if a rule is found, None otherwise.
+#[inline(always)]
+fn check_firewall_rule(key: &IpPort) -> Option<u32> {
+    unsafe { BLOCKLIST.get(key).copied() }
 }
 
-// REMOVED: decimal_to_hex function
-// REMOVED: format_mac function
-
-
+// Main XDP processing logic
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
-    // Ethernet Header
-    let ethhdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
-    let src_mac: [u8; 6] = unsafe { (*ethhdr).src_addr };
-    let dst_mac: [u8; 6] = unsafe { (*ethhdr).dst_addr };
-    let ether_type = unsafe { (*ethhdr).ether_type };
+    // 1. Parse Ethernet Header
+    let eth_hdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
+    // let src_mac = unsafe { (*eth_hdr).src_addr }; // Example: if you need MACs
+    // let dst_mac = unsafe { (*eth_hdr).dst_addr };
 
-    // --- Log MAC Addresses (Simple Decimal Format) ---
-    // Log source MAC address bytes as decimal numbers
-    info!(
-        &ctx,
-        "SRC MAC: {:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
-        src_mac[0], src_mac[1], src_mac[2],
-        src_mac[3], src_mac[4], src_mac[5]
-    );
-    
-    info!(
-        &ctx,
-        "DST MAC: {:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
-        dst_mac[0], dst_mac[1], dst_mac[2],
-        dst_mac[3], dst_mac[4], dst_mac[5]
-    );
-    // --- End Log MAC Addresses ---
-
-    match ether_type {
+    // Check if it's an IPv4 packet, pass others
+    match unsafe { (*eth_hdr).ether_type } {
         EtherType::Ipv4 => {} // Continue processing
-        _ => return Ok(xdp_action::XDP_PASS), // Pass non-IPv4
+        _ => {
+            // info!(&ctx, "Passing non-IPv4 packet");
+            return Ok(xdp_action::XDP_PASS);
+        }
     }
 
-    // IP Header
-    let ipv4hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
-    let protocol = unsafe { (*ipv4hdr).proto };
-    // Calculate transport header offset using IHL (Internet Header Length)
-    // IHL is the number of 32-bit words, so multiply by 4 for bytes.
-    let transport_offset = EthHdr::LEN + (unsafe { (*ipv4hdr).ihl() } as usize * 4);
+    // 2. Parse IPv4 Header
+    let ipv4_hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
+    let source_ip_be = unsafe { (*ipv4_hdr).src_addr }; // Big-endian (network order)
+    let dest_ip_be = unsafe { (*ipv4_hdr).dst_addr };   // Big-endian (network order)
+    let protocol = unsafe { (*ipv4_hdr).proto };
 
+    // Calculate offset to the transport layer header
+    // IHL (Internet Header Length) is in 32-bit words, so multiply by 4 for bytes.
+    let transport_offset = EthHdr::LEN + (unsafe { (*ipv4_hdr).ihl() } as usize * 4);
 
-    let src_addr = u32::from_be(unsafe { (*ipv4hdr).src_addr });
-    let dst_addr = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
-
-    // Transport Header (TCP/UDP Ports)
-    let (src_port, dst_port) = match protocol {
+    // 3. Parse Transport Header (TCP/UDP to get destination port)
+    // We are primarily interested in the destination port for firewall rules.
+    let dest_port_be: u16 = match protocol {
         IpProto::Tcp => {
-            // Ensure TCP header is within bounds before accessing
-            let tcphdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
-            (
-                u16::from_be(unsafe { (*tcphdr).source }),
-                u16::from_be(unsafe { (*tcphdr).dest }),
-            )
+            let tcp_hdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
+            unsafe { (*tcp_hdr).dest } // Big-endian (network order)
         }
         IpProto::Udp => {
-            // Ensure UDP header is within bounds before accessing
-            let udphdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
-            (
-                u16::from_be(unsafe { (*udphdr).source }),
-                u16::from_be(unsafe { (*udphdr).dest }),
-            )
+            let udp_hdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
+            unsafe { (*udp_hdr).dest } // Big-endian (network order)
         }
-
-        _ => (0, 0), // No ports for other protocols like ICMP
+        _ => {
+            // For ICMP or other protocols, we might not have a port, or we can use 0.
+            // For simplicity, if it's not TCP/UDP, we'll treat dest_port as 0.
+            // A rule with port 0 could then act as a wildcard for "any port" for that protocol.
+            0 // Represent "any" or "no port"
+        }
     };
 
-    // Firewall Logic
-    let action = if block_ip(src_addr) {
-
-        xdp_action::XDP_DROP
-    } else {
-        xdp_action::XDP_PASS
+    // 4. Construct the key for the firewall map lookup
+    let rule_key = IpPort {
+        addr: source_ip_be,    // Source IP (already network byte order)
+        addr_dest: dest_ip_be, // Destination IP (already network byte order)
+        port: dest_port_be,    // Destination Port (already network byte order)
+        _pad: 0,               // Padding
     };
 
-    // Log Decision
-    // Avoid passing strings directly to info! if possible, use constants or simple types.
-    // However, aya_log_ebpf might handle small static strings okay. Let's try.
-    // If this causes issues, log the action code (1 or 2) instead.
-    let action_str = if action == xdp_action::XDP_DROP {
-        "DROP"
-    } else {
-        "PASS"
+    // 5. Perform Firewall Logic: Check the map
+    let final_action = match check_firewall_rule(&rule_key) {
+        Some(action_value_from_map) => {
+            // A rule was found in the map
+            if action_value_from_map == ACTION_DENY_FROM_MAP {
+                info!(
+                    &ctx,
+                    "DENY rule match: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}",
+                    u32::from_be(source_ip_be), // Log in host byte order for readability
+                    u32::from_be(dest_ip_be),   // Log in host byte order
+                    u16::from_be(dest_port_be), // Log in host byte order
+                    protocol as u8
+                );
+                xdp_action::XDP_DROP
+            } else if action_value_from_map == ACTION_ALLOW_FROM_MAP {
+                info!(
+                    &ctx,
+                    "ALLOW rule match: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}",
+                    u32::from_be(source_ip_be),
+                    u32::from_be(dest_ip_be),
+                    u16::from_be(dest_port_be),
+                    protocol as u8
+                );
+                xdp_action::XDP_PASS
+            } else {
+                // Unknown action value from map, default to pass (or your chosen default)
+                info!(
+                    &ctx,
+                    "WARN: Unknown action {} from map for S_IP={:i}, D_IP={:i}, D_PORT={}. Passing.",
+                    action_value_from_map,
+                    u32::from_be(source_ip_be),
+                    u32::from_be(dest_ip_be),
+                    u16::from_be(dest_port_be)
+                );
+                xdp_action::XDP_PASS
+            }
+        }
+        None => {
+            // No specific rule found in the map. Default action is PASS.
+            // You could log this if needed for debugging, but it can be very verbose.
+            // info!(&ctx, "No rule match for S_IP={:i}, D_IP={:i}, D_PORT={}. Passing by default.",
+            //     u32::from_be(source_ip_be), u32::from_be(dest_ip_be), u16::from_be(dest_port_be));
+            xdp_action::XDP_PASS
+        }
     };
 
-    info!(
-        &ctx,
-        "IP SRC: {:i}:{} => DST: {:i}:{}, Proto: {}, Action: {}", // Added Proto
-        src_addr,
-        src_port,
-        dst_addr,
-        dst_port,
-        protocol as u8, // Log protocol number
-        action_str
-    );
-
-    Ok(action)
+    Ok(final_action)
 }

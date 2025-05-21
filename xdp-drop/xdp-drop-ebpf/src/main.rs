@@ -2,6 +2,7 @@
 #![no_main]
 #![allow(nonstandard_style, dead_code)]
 
+
 use aya_ebpf::{
     bindings::xdp_action,
     macros::{map, xdp},
@@ -9,12 +10,14 @@ use aya_ebpf::{
     programs::XdpContext,
 };
 use aya_log_ebpf::info;
-
-use core::mem;
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::Ipv4Hdr,
+    ip::IpProto,
+    tcp::TcpHdr,
+    udp::UdpHdr,
 };
+use xdp_drop_common::IpPort
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -22,9 +25,10 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[map] // (1)
-static BLOCKLIST: HashMap<u32, u32> =
-    HashMap::<u32, u32>::with_max_entries(1024, 0);
+
+#[map]
+static BLOCKLIST: HashMap<u32, u32> = HashMap::IpPort, u32>::with_max_entries(1024, 0);
+
 
 #[xdp]
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
@@ -38,38 +42,119 @@ pub fn xdp_firewall(ctx: XdpContext) -> u32 {
 unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     let start = ctx.data();
     let end = ctx.data_end();
-    let len = mem::size_of::<T>();
+    let len = core::mem::size_of::<T>();
 
     if start + offset + len > end {
         return Err(());
     }
 
-    let ptr = (start + offset) as *const T;
-    Ok(&*ptr)
+    Ok((start + offset) as *const T)
 }
 
-// (2)
 fn block_ip(address: u32) -> bool {
-    unsafe { BLOCKLIST.get(&address).is_some() }
+    // Using .get() directly is safe in eBPF.
+    // The unsafe block is not strictly needed here for the get call itself,
+    // but might be kept if BLOCKLIST access requires it in other contexts.
+    // However, for clarity, let's assume HashMap::get is safe.
+    unsafe {
+        BLOCKLIST.get(&address).is_some()
+    }
 }
+
+// REMOVED: decimal_to_hex function
+// REMOVED: format_mac function
+
 
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
+    // Ethernet Header
     let ethhdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
-    match unsafe { (*ethhdr).ether_type } {
-        EtherType::Ipv4 => {}
-        _ => return Ok(xdp_action::XDP_PASS),
+    let src_mac: [u8; 6] = unsafe { (*ethhdr).src_addr };
+    let dst_mac: [u8; 6] = unsafe { (*ethhdr).dst_addr };
+    let ether_type = unsafe { (*ethhdr).ether_type };
+
+    // --- Log MAC Addresses (Simple Decimal Format) ---
+    // Log source MAC address bytes as decimal numbers
+    info!(
+        &ctx,
+        "SRC MAC: {:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
+        src_mac[0], src_mac[1], src_mac[2],
+        src_mac[3], src_mac[4], src_mac[5]
+    );
+    
+    info!(
+        &ctx,
+        "DST MAC: {:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
+        dst_mac[0], dst_mac[1], dst_mac[2],
+        dst_mac[3], dst_mac[4], dst_mac[5]
+    );
+    // --- End Log MAC Addresses ---
+
+    match ether_type {
+        EtherType::Ipv4 => {} // Continue processing
+        _ => return Ok(xdp_action::XDP_PASS), // Pass non-IPv4
     }
 
+    // IP Header
     let ipv4hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
-    let source = u32::from_be(unsafe { (*ipv4hdr).src_addr });
+    let protocol = unsafe { (*ipv4hdr).proto };
+    // Calculate transport header offset using IHL (Internet Header Length)
+    // IHL is the number of 32-bit words, so multiply by 4 for bytes.
+    let transport_offset = EthHdr::LEN + (unsafe { (*ipv4hdr).ihl() } as usize * 4);
 
-    // (3)
-    let action = if block_ip(source) {
+
+    let src_addr = u32::from_be(unsafe { (*ipv4hdr).src_addr });
+    let dst_addr = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
+
+    // Transport Header (TCP/UDP Ports)
+    let (src_port, dst_port) = match protocol {
+        IpProto::Tcp => {
+            // Ensure TCP header is within bounds before accessing
+            let tcphdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
+            (
+                u16::from_be(unsafe { (*tcphdr).source }),
+                u16::from_be(unsafe { (*tcphdr).dest }),
+            )
+        }
+        IpProto::Udp => {
+            // Ensure UDP header is within bounds before accessing
+            let udphdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
+            (
+                u16::from_be(unsafe { (*udphdr).source }),
+                u16::from_be(unsafe { (*udphdr).dest }),
+            )
+        }
+
+        _ => (0, 0), // No ports for other protocols like ICMP
+    };
+
+    // Firewall Logic
+    let action = if block_ip(src_addr) {
+
         xdp_action::XDP_DROP
     } else {
         xdp_action::XDP_PASS
     };
-    info!(&ctx, "SRC: {:i}, ACTION: {}", source, action);
+
+    // Log Decision
+    // Avoid passing strings directly to info! if possible, use constants or simple types.
+    // However, aya_log_ebpf might handle small static strings okay. Let's try.
+    // If this causes issues, log the action code (1 or 2) instead.
+    let action_str = if action == xdp_action::XDP_DROP {
+        "DROP"
+    } else {
+        "PASS"
+    };
+
+    info!(
+        &ctx,
+        "IP SRC: {:i}:{} => DST: {:i}:{}, Proto: {}, Action: {}", // Added Proto
+        src_addr,
+        src_port,
+        dst_addr,
+        dst_port,
+        protocol as u8, // Log protocol number
+        action_str
+    );
 
     Ok(action)
 }

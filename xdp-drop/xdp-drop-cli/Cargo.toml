@@ -1,0 +1,17 @@
+# xdp-drop-cli/Cargo.toml
+
+[package]
+name = "xdp-drop-cli"
+version = "0.1.0"   
+edition = "2021" # Recommandé
+
+[dependencies]
+tonic = "0.11"   # Version alignée avec le serveur
+prost = "0.12"   # Version alignée avec le serveur
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+anyhow = "1"
+clap = { version = "4", features = ["derive"]} # Si vous voulez l'utiliser plus tard
+
+[build-dependencies]
+tonic-build = "0.11" # Version alignée avec tonic
+anyhow = "1"         # Pour la gestion des erreurs dans build.rs

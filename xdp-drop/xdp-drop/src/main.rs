@@ -247,7 +247,7 @@ impl FirewallService for MyFirewallService {
                 )));
             }
             Err(e) => {
-                error!("Erreur lors de la récupération des détails de la règle ID {}: {}", rule_id_to_delete, e);
+                log::error!("Erreur lors de la récupération des détails de la règle ID {}: {}", rule_id_to_delete, e);
                 return Err(tonic::Status::internal(format!(
                     "Échec de la récupération des détails de la règle: {}", e
                 )));
@@ -272,7 +272,7 @@ impl FirewallService for MyFirewallService {
                 info!("Règle ID {} supprimée de la DB ({} lignes affectées).", rule_id_to_delete, rows_affected);
             }
             Err(e) => {
-                error!("Erreur lors de la suppression de la règle ID {} de la DB: {}", rule_id_to_delete, e);
+                log::error!("Erreur lors de la suppression de la règle ID {} de la DB: {}", rule_id_to_delete, e);
                 return Err(tonic::Status::internal(format!(
                     "Échec de la suppression de la règle en base de données: {}", e
                 )));

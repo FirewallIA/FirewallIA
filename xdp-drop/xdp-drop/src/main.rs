@@ -156,7 +156,7 @@ impl FirewallService for MyFirewallService {
                 &source_port_db,    // Utiliser les Option<i32>
                 &dest_port_db,      // Utiliser les Option<i32>
                 &action_str,        // Utiliser la version validée/normalisée
-                &rule_to_create.protocol,
+                &rule_to_create.protocol.to_uppercase(),
             ],
         ).await {
             Ok(row) => {

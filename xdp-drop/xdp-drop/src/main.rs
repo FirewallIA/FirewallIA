@@ -424,12 +424,6 @@ async fn main() -> Result<(), anyhow::Error> {
             protocol.unwrap_or_else(|| "any".to_string()),
         );
     }
-    let program: &mut Xdp =
-        bpf.program_mut("xdp_firewall").unwrap().try_into()?;
-    program.load()?;
-    program.attach(&opt.iface, XdpFlags::default())
-        .context("failed to attach the XDP program with default flags")?;
-
 
     // Serveur gRPC
     let grpc_addr = "[::1]:50051".parse().context("Adresse gRPC invalide")?;

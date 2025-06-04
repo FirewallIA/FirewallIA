@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-aya = {  version = "0.13.1", features = ["async_tokio", "macros"] }
+aya = {  version = "0.13.1", features = ["async_tokio"] }
 aya-log = { version = "0.13.1" }
 xdp-drop-common = { path = "../xdp-drop-common", features = ["user"] }
 anyhow = "1"

@@ -15,3 +15,4 @@ which = { version = "7.0.0", default-features = false }
 [[bin]]
 name = "xdp-drop"
 path = "src/main.rs"
+    

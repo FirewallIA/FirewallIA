@@ -5,7 +5,7 @@
 // Vous pouvez garder cet import pour le trait si vous l'utilisez ailleurs,
 // ou le supprimer si derive(Pod) est la seule utilisation.
 #[cfg(feature = "user")]
-use aya::Pod as AyaPodTrait;
+use aya::Pod;
 
 // --- Structure PacketLog ---
 #[repr(C)]

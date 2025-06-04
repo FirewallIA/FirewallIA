@@ -1,5 +1,6 @@
-// xdp-drop-common/src/lib.rs
-#![no_std] 
+// Dans: xdp-drop-common/src/lib.rs
+
+#![no_std] // Assurez-vous que ceci est bien au début du fichier
 
 #[cfg(feature = "user")]
 use aya::Pod; // Pour la dérivation de Pod en userspace, seulement si la feature "user" est active

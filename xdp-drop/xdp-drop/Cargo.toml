@@ -5,8 +5,8 @@ edition = "2021"
 publish = false
 
 [dependencies]
-aya = {  version = "0.13.1", optional= true, features = ["async_tokio","macros"] }
-aya-log = {version = "0.13.1" }
+aya = { git = "https://github.com/aya-rs/aya", features = ["async_tokio", "macros"] }
+aya-log = { git = "https://github.com/aya-rs/aya" }
 xdp-drop-common = { path = "../xdp-drop-common", features = ["user"] }
 anyhow = "1"
 clap = { version = "4.1", features = ["derive"] }

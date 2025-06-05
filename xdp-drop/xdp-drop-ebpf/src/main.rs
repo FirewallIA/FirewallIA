@@ -133,7 +133,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
             }
         }
         // CORRIGÉ: Remplacer ¤t_state_val par current_state_val et passer une référence
-        unsafe { CONN_TRACK_TABLE.insert(&conn_key, ¤t_state_val, 0).map_err(|_| ())? };
+        unsafe { CONN_TRACK_TABLE.insert(&conn_key, current_state_val, 0).map_err(|_| ())? };
         return Ok(xdp_action::XDP_PASS);
 
     } else if let Some(conn_val_ptr) = unsafe { CONN_TRACK_TABLE.get_ptr_mut(&reverse_conn_key) } {
@@ -163,7 +163,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
             }
         }
         // CORRIGÉ: Remplacer ¤t_state_val par current_state_val et passer une référence
-        unsafe { CONN_TRACK_TABLE.insert(&reverse_conn_key, ¤t_state_val, 0).map_err(|_| ())? };
+        unsafe { CONN_TRACK_TABLE.insert(&reverse_conn_key, current_state_val, 0).map_err(|_| ())? };
         return Ok(xdp_action::XDP_PASS);
     }
 

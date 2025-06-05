@@ -1,6 +1,6 @@
 // xdp-drop/build.rs
 use anyhow::{anyhow, Context as _};
-use aya_build::{cargo_metadata, Toolchain}; // BuildOptions a été retiré de cette ligne
+use aya_build::{cargo_metadata, Toolchain};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -20,17 +20,15 @@ fn main() -> anyhow::Result<()> {
     let ebpf_package_ref = cargo_meta_output
         .packages
         .iter()
-        .find(|p| p.name == "xdp-drop-ebpf") // Assurez-vous que c'est le nom correct
+        .find(|p| p.name == "xdp-drop-ebpf")
         .ok_or_else(|| {
             anyhow!("Le package eBPF 'xdp-drop-ebpf' n'a pas été trouvé. Vérifiez son nom et sa présence dans le workspace.")
         })?;
 
-    // Appel à build_ebpf sans l'argument BuildOptions explicite.
-    // On capture le résultat, qui devrait être Vec<PathBuf>.
+    // Appel à build_ebpf. On clone ebpf_package_ref pour obtenir un Package par valeur.
     let compiled_ebpf_artifact_paths = aya_build::build_ebpf(
-        std::iter::once(ebpf_package_ref.clone()), // S'assurer que ebpf_package_ref est un &Package
+        std::iter::once(ebpf_package_ref.clone()), // MODIFICATION ICI: .clone()
         &Toolchain::default(),
-        // Pas d'argument BuildOptions ici
     )
     .context(format!(
         "Échec de la compilation du programme eBPF à partir du package '{}'",
@@ -44,7 +42,7 @@ fn main() -> anyhow::Result<()> {
         )
     })?;
 
-    let ebpf_dest_filename = "xdp-drop"; // Nom attendu par main.rs
+    let ebpf_dest_filename = "xdp-drop";
     let ebpf_dest_path = out_dir.join(ebpf_dest_filename);
 
     fs::copy(ebpf_source_path, &ebpf_dest_path).context(format!(
@@ -61,10 +59,9 @@ fn main() -> anyhow::Result<()> {
     println!("cargo:info=Début de la compilation des protocol buffers...");
     let proto_file = "../proto/firewall.proto";
     let proto_include_dir = "../proto";
-    let google_wellknown_types_include_dir = "../proto/include"; // Pour google.protobuf.Empty
+    let google_wellknown_types_include_dir = "../proto/include";
 
     println!("cargo:rerun-if-changed={}", proto_file);
-    // Vous pouvez ajouter d'autres rerun-if-changed pour les dépendances proto
 
     tonic_build::configure()
         .compile_well_known_types(true)

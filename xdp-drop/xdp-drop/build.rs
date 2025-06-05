@@ -1,18 +1,15 @@
 // xdp-drop/build.rs
 use anyhow::{anyhow, Context as _};
-use aya_build::{cargo_metadata, Toolchain}; // BuildOptions retiré ici
+use aya_build::{cargo_metadata, Toolchain}; // BuildOptions a été retiré de cette ligne
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 
 fn main() -> anyhow::Result<()> {
-    // S'assurer que ce script de build est ré-exécuté s'il change
     println!("cargo:rerun-if-changed=build.rs");
 
-    // Récupérer le répertoire de sortie (OUT_DIR) pour ce crate (xdp-drop)
     let out_dir = PathBuf::from(env::var("OUT_DIR").context("La variable d'environnement OUT_DIR n'est pas définie")?);
 
-    // --- Compilation eBPF et copie de l'artefact ---
     println!("cargo:info=Début de la compilation eBPF et de la configuration...");
 
     let cargo_meta_output = cargo_metadata::MetadataCommand::new()
@@ -23,16 +20,17 @@ fn main() -> anyhow::Result<()> {
     let ebpf_package_ref = cargo_meta_output
         .packages
         .iter()
-        .find(|p| p.name == "xdp-drop-ebpf")
+        .find(|p| p.name == "xdp-drop-ebpf") // Assurez-vous que c'est le nom correct
         .ok_or_else(|| {
-            anyhow!("Le package eBPF 'xdp-drop-ebpf' n'a pas été trouvé dans l'espace de travail.")
+            anyhow!("Le package eBPF 'xdp-drop-ebpf' n'a pas été trouvé. Vérifiez son nom et sa présence dans le workspace.")
         })?;
 
-    // Utiliser les options par défaut directement
+    // Appel à build_ebpf sans l'argument BuildOptions explicite.
+    // On capture le résultat, qui devrait être Vec<PathBuf>.
     let compiled_ebpf_artifact_paths = aya_build::build_ebpf(
-        std::iter::once(ebpf_package_ref),
+        std::iter::once(ebpf_package_ref), // S'assurer que ebpf_package_ref est un &Package
         &Toolchain::default(),
-        &aya_build::BuildOptions::default(), // Construire les options par défaut ici
+        // Pas d'argument BuildOptions ici
     )
     .context(format!(
         "Échec de la compilation du programme eBPF à partir du package '{}'",
@@ -46,11 +44,11 @@ fn main() -> anyhow::Result<()> {
         )
     })?;
 
-    let ebpf_dest_filename = "xdp-drop";
+    let ebpf_dest_filename = "xdp-drop"; // Nom attendu par main.rs
     let ebpf_dest_path = out_dir.join(ebpf_dest_filename);
 
     fs::copy(ebpf_source_path, &ebpf_dest_path).context(format!(
-        "Échec de la copie de l'objet eBPF de la source '{:?}' vers la destination '{:?}'",
+        "Échec de la copie de l'objet eBPF de '{:?}' vers '{:?}'",
         ebpf_source_path, ebpf_dest_path
     ))?;
 
@@ -63,9 +61,10 @@ fn main() -> anyhow::Result<()> {
     println!("cargo:info=Début de la compilation des protocol buffers...");
     let proto_file = "../proto/firewall.proto";
     let proto_include_dir = "../proto";
-    let google_wellknown_types_include_dir = "../proto/include";
+    let google_wellknown_types_include_dir = "../proto/include"; // Pour google.protobuf.Empty
 
     println!("cargo:rerun-if-changed={}", proto_file);
+    // Vous pouvez ajouter d'autres rerun-if-changed pour les dépendances proto
 
     tonic_build::configure()
         .compile_well_known_types(true)

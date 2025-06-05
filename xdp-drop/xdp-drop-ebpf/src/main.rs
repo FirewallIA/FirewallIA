@@ -2,7 +2,7 @@
 
 #![no_std]
 #![no_main]
-#![allow(nonstandard_style, dead_code, unused_imports)] // Gardez unused_imports pendant le dev
+#![allow(nonstandard_style, dead_code, unused_imports)]
 
 use aya_ebpf::{
     bindings::xdp_action,
@@ -12,10 +12,12 @@ use aya_ebpf::{
     helpers::bpf_ktime_get_ns,
 };
 use aya_log_ebpf::info;
+
+// MODIFIÉ: Importation des constantes de flags TCP
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{Ipv4Hdr, IpProto},
-    tcp::{TcpHdr, SYN as TCP_SYN, ACK as TCP_ACK, RST as TCP_RST, FIN as TCP_FIN}, // Import direct des constantes
+    tcp::{self, TcpHdr}, // Importer le module tcp et TcpHdr
     udp::UdpHdr,
 };
 
@@ -36,7 +38,7 @@ static CONN_TRACK_TABLE: HashMap<ConnectionKey, ConnectionValue> =
     HashMap::<ConnectionKey, ConnectionValue>::with_max_entries(10240, 0);
 
 const ACTION_DENY_FROM_MAP: u32 = 1;
-const ACTION_ALLOW_FROM_MAP: u32 = 2; // Pour les nouvelles connexions
+const ACTION_ALLOW_FROM_MAP: u32 = 2;
 
 #[xdp]
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
@@ -57,33 +59,49 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let current_time_ns = unsafe { bpf_ktime_get_ns() };
 
-    // 1. Parse Ethernet
     let eth_hdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
     if unsafe { (*eth_hdr).ether_type } != EtherType::Ipv4 {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    // 2. Parse IPv4
     let ipv4_hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
     let source_ip = unsafe { (*ipv4_hdr).src_addr };
     let dest_ip = unsafe { (*ipv4_hdr).dst_addr };
     let protocol = unsafe { (*ipv4_hdr).proto };
     let transport_offset = EthHdr::LEN + (unsafe { (*ipv4_hdr).ihl() } as usize * 4);
 
-    // 3. Parse Transport (TCP/UDP) pour ports et flags TCP
+    // CORRIGÉ: Accès aux flags TCP
     let (source_port, dest_port, tcp_flags_byte) = match protocol {
         IpProto::Tcp => {
             let tcp_hdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
-            (unsafe { (*tcp_hdr).source }, unsafe { (*tcp_hdr).dest }, unsafe { (*tcp_hdr).flags() })
+            // network-types::TcpHdr a un champ `_bitflags` (privé par convention, mais accessible en unsafe)
+            // ou des méthodes individuelles. Pour obtenir le byte de flags, on accède au champ.
+            // Ce champ est souvent le 13ème byte (offset 12) du header TCP (après les ports, seq, ack).
+            // La structure TcpHdr de network-types (0.0.7) stocke les flags dans un champ interne.
+            // Le plus simple est d'utiliser les méthodes booléennes pour reconstruire le byte si besoin,
+            // ou si vous avez accès à la valeur brute (par exemple, `(*tcp_hdr).flags_raw()` si elle existe).
+            // Pour l'instant, construisons-le à partir des méthodes individuelles si besoin.
+            // TcpHdr de network_types a un champ 'inner' qui contient les champs bruts.
+            // On peut aussi utiliser les méthodes .syn(), .ack(), etc.
+            // Pour cet exemple, nous allons supposer que nous avons besoin du byte de flags.
+            // `(*tcp_hdr).flags()` n'existe pas. On va utiliser les constantes importées
+            // et les méthodes `tcp_hdr.syn()`, `tcp_hdr.ack()` etc.
+
+            let mut flags: u8 = 0;
+            if unsafe { (*tcp_hdr).syn() } { flags |= tcp::SYN_FLAG; } // Utiliser les constantes du module tcp
+            if unsafe { (*tcp_hdr).ack() } { flags |= tcp::ACK_FLAG; }
+            if unsafe { (*tcp_hdr).fin() } { flags |= tcp::FIN_FLAG; }
+            if unsafe { (*tcp_hdr).rst() } { flags |= tcp::RST_FLAG; }
+            // Ajoutez PSH, URG si nécessaire
+            (unsafe { (*tcp_hdr).source() }, unsafe { (*tcp_hdr).dest() }, flags)
         }
         IpProto::Udp => {
             let udp_hdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
-            (unsafe { (*udp_hdr).source }, unsafe { (*udp_hdr).dest }, 0) // Pas de flags pour UDP ici
+            (unsafe { (*udp_hdr).source() }, unsafe { (*udp_hdr).dest() }, 0)
         }
-        _ => return Ok(xdp_action::XDP_PASS), // Autres protocoles non suivis pour l'instant
+        _ => return Ok(xdp_action::XDP_PASS),
     };
 
-    // 4. Créer la clé de connexion pour la table de suivi
     let conn_key = ConnectionKey {
         src_ip: source_ip,
         src_port: source_port,
@@ -101,25 +119,23 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad1: 0, _pad2: 0,
     };
 
-
-    // 5. Vérifier la table de suivi des connexions (CTT)
     if let Some(conn_val_ptr) = unsafe { CONN_TRACK_TABLE.get_ptr_mut(&conn_key) } {
-        // Connexion sortante (client -> serveur) trouvée
-        let mut current_state_val = unsafe{ (*conn_val_ptr).clone() }; // Lire la valeur
+        let mut current_state_val = unsafe { (*conn_val_ptr).clone() };
         current_state_val.last_seen_ns = current_time_ns;
 
         match current_state_val.state {
             ConnStateVariant::Tcp(ref mut tcp_s) => {
-                if tcp_flags_byte & TCP_RST != 0 {
+                // Utiliser les constantes de flags du module tcp
+                if tcp_flags_byte & tcp::RST_FLAG != 0 { // CORRIGÉ
                     unsafe { CONN_TRACK_TABLE.remove(&conn_key).map_err(|_| ())? };
                     info!(&ctx, "CTT: TCP RST (fwd), dropping & removing. {:i}:{} -> {:i}:{}", u32::from_be(source_ip), u16::from_be(source_port), u32::from_be(dest_ip), u16::from_be(dest_port));
                     return Ok(xdp_action::XDP_DROP);
                 }
-                if tcp_flags_byte & TCP_FIN != 0 && *tcp_s == TcpState::Established {
+                if tcp_flags_byte & tcp::FIN_FLAG != 0 && *tcp_s == TcpState::Established { // CORRIGÉ
                     *tcp_s = TcpState::FinWait1;
                     info!(&ctx, "CTT: TCP FIN (fwd) on established. {:i}:{} -> {:i}:{}", u32::from_be(source_ip), u16::from_be(source_port), u32::from_be(dest_ip), u16::from_be(dest_port));
                 }
-                else if *tcp_s == TcpState::SynReceived && (tcp_flags_byte & TCP_ACK != 0) && !(tcp_flags_byte & TCP_SYN != 0) {
+                else if *tcp_s == TcpState::SynReceived && (tcp_flags_byte & tcp::ACK_FLAG != 0) && !(tcp_flags_byte & tcp::SYN_FLAG != 0) { // CORRIGÉ
                     *tcp_s = TcpState::Established;
                     info!(&ctx, "CTT: TCP ACK for SYN-ACK (fwd). ESTABLISHED. {:i}:{} -> {:i}:{}", u32::from_be(source_ip), u16::from_be(source_port), u32::from_be(dest_ip), u16::from_be(dest_port));
                 }
@@ -128,28 +144,27 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
                  if *udp_s == UdpState::New { *udp_s = UdpState::Established; }
             }
         }
-        // Correction de la typo : `current_state_val`
+        // CORRIGÉ: Remplacer ¤t_state_val par current_state_val
         unsafe { CONN_TRACK_TABLE.insert(&conn_key, ¤t_state_val, 0).map_err(|_| ())? };
         return Ok(xdp_action::XDP_PASS);
 
     } else if let Some(conn_val_ptr) = unsafe { CONN_TRACK_TABLE.get_ptr_mut(&reverse_conn_key) } {
-        // Connexion entrante (serveur -> client, réponse) trouvée
-        let mut current_state_val = unsafe{ (*conn_val_ptr).clone() };
+        let mut current_state_val = unsafe { (*conn_val_ptr).clone() };
         current_state_val.last_seen_ns = current_time_ns;
 
         match current_state_val.state {
             ConnStateVariant::Tcp(ref mut tcp_s) => {
-                if tcp_flags_byte & TCP_RST != 0 {
+                // Utiliser les constantes de flags du module tcp
+                if tcp_flags_byte & tcp::RST_FLAG != 0 { // CORRIGÉ
                     unsafe { CONN_TRACK_TABLE.remove(&reverse_conn_key).map_err(|_| ())? };
                     info!(&ctx, "CTT: TCP RST (rev), dropping & removing. {:i}:{} -> {:i}:{}", u32::from_be(source_ip), u16::from_be(source_port), u32::from_be(dest_ip), u16::from_be(dest_port));
                     return Ok(xdp_action::XDP_DROP);
                 }
-                if *tcp_s == TcpState::SynSent && (tcp_flags_byte & (TCP_SYN | TCP_ACK) == (TCP_SYN | TCP_ACK)) {
+                if *tcp_s == TcpState::SynSent && (tcp_flags_byte & (tcp::SYN_FLAG | tcp::ACK_FLAG) == (tcp::SYN_FLAG | tcp::ACK_FLAG)) { // CORRIGÉ
                     *tcp_s = TcpState::SynReceived;
                     info!(&ctx, "CTT: TCP SYN-ACK for SYN (rev). SynReceived. {:i}:{} -> {:i}:{}", u32::from_be(source_ip), u16::from_be(source_port), u32::from_be(dest_ip), u16::from_be(dest_port));
                 }
-                else if tcp_flags_byte & TCP_FIN != 0 && *tcp_s == TcpState::Established {
-                    // Optionnel: Transitionner vers un état de fermeture (ex: CloseWait)
+                else if tcp_flags_byte & tcp::FIN_FLAG != 0 && *tcp_s == TcpState::Established { // CORRIGÉ
                     info!(&ctx, "CTT: TCP FIN (rev) on established. {:i}:{} -> {:i}:{}", u32::from_be(source_ip), u16::from_be(source_port), u32::from_be(dest_ip), u16::from_be(dest_port));
                 }
             }
@@ -160,12 +175,11 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
                 }
             }
         }
-        // Correction de la typo : `current_state_val`
+        // CORRIGÉ: Remplacer ¤t_state_val par current_state_val
         unsafe { CONN_TRACK_TABLE.insert(&reverse_conn_key, ¤t_state_val, 0).map_err(|_| ())? };
         return Ok(xdp_action::XDP_PASS);
     }
 
-    // 6. Si pas dans CTT: Nouvelle connexion. Consulter BLOCKLIST (règles statiques).
     let blocklist_key = IpPort {
         addr: source_ip,
         addr_dest: dest_ip,
@@ -182,7 +196,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         }
         Some(ACTION_ALLOW_FROM_MAP) => {
             let new_conn_state_opt: Option<ConnStateVariant> = match protocol {
-                IpProto::Tcp if (tcp_flags_byte & TCP_SYN != 0) && !(tcp_flags_byte & TCP_ACK != 0) => {
+                // Utiliser les constantes de flags du module tcp
+                IpProto::Tcp if (tcp_flags_byte & tcp::SYN_FLAG != 0) && !(tcp_flags_byte & tcp::ACK_FLAG != 0) => { // CORRIGÉ
                     info!(&ctx, "BLOCKLIST: ALLOW new TCP SYN. Creating CTT entry. {:i}:{} -> {:i}:{}", u32::from_be(source_ip), u16::from_be(source_port), u32::from_be(dest_ip), u16::from_be(dest_port));
                     Some(ConnStateVariant::Tcp(TcpState::SynSent))
                 }

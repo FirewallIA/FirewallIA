@@ -25,10 +25,9 @@ fn main() -> anyhow::Result<()> {
             anyhow!("Le package eBPF 'xdp-drop-ebpf' n'a pas été trouvé. Vérifiez son nom et sa présence dans le workspace.")
         })?;
 
-    // Appel à build_ebpf. On clone ebpf_package_ref pour obtenir un Package par valeur.
     let compiled_ebpf_artifact_paths = aya_build::build_ebpf(
-        std::iter::once(ebpf_package_ref.clone()), // MODIFICATION ICI: .clone()
-        &Toolchain::default(),
+        std::iter::once(ebpf_package_ref.clone()),
+        Toolchain::default(), // MODIFICATION ICI: retiré le &
     )
     .context(format!(
         "Échec de la compilation du programme eBPF à partir du package '{}'",

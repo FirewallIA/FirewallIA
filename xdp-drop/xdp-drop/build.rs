@@ -28,7 +28,7 @@ fn main() -> anyhow::Result<()> {
     // Appel à build_ebpf sans l'argument BuildOptions explicite.
     // On capture le résultat, qui devrait être Vec<PathBuf>.
     let compiled_ebpf_artifact_paths = aya_build::build_ebpf(
-        std::iter::once(ebpf_package_ref), // S'assurer que ebpf_package_ref est un &Package
+        std::iter::once(ebpf_package_ref.clone()), // S'assurer que ebpf_package_ref est un &Package
         &Toolchain::default(),
         // Pas d'argument BuildOptions ici
     )

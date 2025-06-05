@@ -1,70 +1,3 @@
-// Dans xdp-drop-ebpf/src/main.rs
-
-#![no_std]
-#![no_main]
-#![allow(nonstandard_style, dead_code, unused_imports)]
-
-use aya_ebpf::{
-    bindings::xdp_action,
-    macros::{map, xdp},
-    maps::HashMap,
-    programs::XdpContext,
-    helpers::bpf_ktime_get_ns,
-};
-use aya_log_ebpf::info;
-
-// Utiliser TcpHdr et UdpHdr de network_types
-use network_types::{
-    eth::{EthHdr, EtherType},
-    ip::{Ipv4Hdr, IpProto},
-    tcp::TcpHdr,
-    udp::UdpHdr,
-};
-
-// Vos structures partagées
-use xdp_drop_common::{IpPort, ConnectionKey, ConnectionValue, TcpState, UdpState, ConnStateVariant};
-
-// Définir les constantes de flags TCP manuellement
-const TCP_FLAG_FIN: u8 = 0x01;
-const TCP_FLAG_SYN: u8 = 0x02;
-const TCP_FLAG_RST: u8 = 0x04;
-const TCP_FLAG_PSH: u8 = 0x08;
-const TCP_FLAG_ACK: u8 = 0x10;
-const TCP_FLAG_URG: u8 = 0x20;
-
-
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
-
-#[map]
-static BLOCKLIST: HashMap<IpPort, u32> = HashMap::<IpPort, u32>::with_max_entries(1024, 0);
-
-#[map]
-static CONN_TRACK_TABLE: HashMap<ConnectionKey, ConnectionValue> =
-    HashMap::<ConnectionKey, ConnectionValue>::with_max_entries(10240, 0);
-
-const ACTION_DENY_FROM_MAP: u32 = 1;
-const ACTION_ALLOW_FROM_MAP: u32 = 2;
-
-#[xdp]
-pub fn xdp_firewall(ctx: XdpContext) -> u32 {
-    match try_xdp_firewall(ctx) {
-        Ok(ret) => ret,
-        Err(_) => xdp_action::XDP_ABORTED,
-    }
-}
-
-#[inline(always)]
-unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
-    let start = ctx.data();
-    let end = ctx.data_end();
-    let len = core::mem::size_of::<T>();
-    if start + offset + len > end { Err(()) } else { Ok((start + offset) as *const T) }
-}
-
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let current_time_ns = unsafe { bpf_ktime_get_ns() };
 
@@ -138,7 +71,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
             }
         }
         // Utiliser current_state_val et passer par référence
-        unsafe { CONN_TRACK_TABLE.insert(&conn_key, ¤t_state_val, 0).map_err(|_| ())? };
+        unsafe { CONN_TRACK_TABLE.insert(&conn_key, ¤t_state_val, 0).map_err(|_| ())? }; // CORRIGÉ ICI
         return Ok(xdp_action::XDP_PASS);
 
     } else if let Some(conn_val_ptr) = unsafe { CONN_TRACK_TABLE.get_ptr_mut(&reverse_conn_key) } {
@@ -168,7 +101,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
             }
         }
         // Utiliser current_state_val et passer par référence
-        unsafe { CONN_TRACK_TABLE.insert(&reverse_conn_key, ¤t_state_val, 0).map_err(|_| ())? };
+        unsafe { CONN_TRACK_TABLE.insert(&reverse_conn_key, ¤t_state_val, 0).map_err(|_| ())? }; // CORRIGÉ ICI
         return Ok(xdp_action::XDP_PASS);
     }
 

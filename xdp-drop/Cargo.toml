@@ -7,9 +7,9 @@ edition = "2021"
 
 # Définit le workspace et ses membres
 members = [
-    "xdp-drop-common",
-    "xdp-drop-ebpf",
-    "xdp-drop-cli",
+    "/xdp-drop-common",
+    "/xdp-drop-ebpf",
+    "/xdp-drop-cli",
 ]
 
 # Centralise toutes les versions des dépendances ici

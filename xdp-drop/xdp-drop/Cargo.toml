@@ -1,51 +1,55 @@
+# Fichier : /root/FirewallIA/xdp-drop/Cargo.toml
+
 [package]
 name = "xdp-drop"
 version = "0.1.0"
 edition = "2021"
-publish = false
 
+# -> SECTION IMPORTANTE À AJOUTER/MODIFIER <-
+[workspace]
+members = [
+    "xdp-drop-common",
+    "xdp-drop-ebpf",
+]
+
+# Définissez les versions des dépendances ici UNE SEULE FOIS
+[workspace.dependencies]
+aya = { version = "0.11.0", features = ["async_tokio"] }
+aya-log = "0.11.0"
+aya-ebpf = "0.11.0"
+aya-log-ebpf = "0.11.0"
+bytemuck = { version = "1.12", features = ["derive"] }
+anyhow = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+tokio = { version = "1.21", features = ["full"] }
+network-types = "0.0.5"
+# ... et toutes vos autres dépendances (tonic, prost, etc.)
+
+# Définissez les profils ici UNE SEULE FOIS
+[profile.dev]
+opt-level = 1
+debug = true
+
+[profile.release]
+opt-level = 3
+debug = false
+panic = "abort"
+lto = true
+
+
+# VOS DÉPENDANCES POUR CE PACKAGE SPÉCIFIQUE
 [dependencies]
-aya = { git = "https://github.com/aya-rs/aya", features = ["async_tokio"] }
-aya-log = {git = "https://github.com/aya-rs/aya" }
-xdp-drop-common = { path = "../xdp-drop-common", features = ["user"] }
-anyhow = "1"
-clap = { version = "4.1", features = ["derive"] }
-log = "0.4"
-tokio = { version = "1.25", features = [
-  "macros",
-  "rt",
-  "rt-multi-thread",
-  "net",
-  "signal",
-] }
-bytes = "1"
-env_logger = "0.11"
-simple_logger = "1.11"
-flexi_logger = "0.27"
-tokio-postgres = "0.7"
-tonic = "0.11"
-prost = "0.12.6"
-prost-types = "0.12.6"
+# Utilisez la syntaxe `workspace = true` pour hériter des versions
+aya = { workspace = true }
+aya-log = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+# ... etc ...
+xdp-drop-common = { path = "xdp-drop-common" }
+xdp-drop-ebpf = { path = "xdp-drop-ebpf" }
 
+# ... votre section [[bin]] ...
 
 [build-dependencies]
-aya-build = { git = "https://github.com/aya-rs/aya" }
-anyhow = "1"
-# TODO(https://github.com/rust-lang/cargo/issues/12375): this should be an artifact dependency, but
-# it's not possible to tell cargo to use `-Z build-std` to build it. We cargo-in-cargo in the build
-# script to build this, but we want to teach cargo about the dependecy so that cache invalidation
-# works properly.
-#
-# Note also that https://github.com/rust-lang/cargo/issues/10593 occurs when `target = ...` is added
-# to an artifact dependency; it seems possible to work around that by setting `resolver = "1"` in
-# Cargo.toml in the workspace root.
-#
-# Finally note that *any* usage of `artifact = ...` in *any* Cargo.toml in the workspace breaks
-# workflows with stable cargo; stable cargo outright refuses to load manifests that use unstable
-# features.
-xdp-drop-ebpf = { path = "../xdp-drop-ebpf" }
-tonic-build = "0.11"
-
-[[bin]]
-name = "xdp-drop"
-path = "src/main.rs"
+aya-builder = "0.11" # ou votre build-dependency actuelle

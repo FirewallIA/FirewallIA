@@ -6,29 +6,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aya-ebpf = "0.1.1" # ou la version que tu utilises
-aya-log-ebpf = "0.1.1" # ou la version que tu utilises
+# Héritez des versions du workspace
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+network-types = { workspace = true }
 xdp-drop-common = { path = "../xdp-drop-common" }
-network-types = "0.0.7" # ou la version que tu utilises
-[build-dependencies]
-which = "4.2"
 
 [lib]
 path = "src/lib.rs"
 crate-type = ["staticlib"]
-
-[profile.dev]
-opt-level = 3
-debug = false
-debug-assertions = false
-overflow-checks = false
-lto = true
-panic = "abort"
-incremental = false
-codegen-units = 1
-rpath = false
-
-[profile.release]
-lto = true
-panic = "abort"
-codegen-units = 1

@@ -5,17 +5,11 @@ name = "xdp-drop-common"
 version = "0.1.0"
 edition = "2021"
 
-# -> AJOUTEZ CETTE SECTION <-
-[features]
-default = []
-# La feature "user" active la dépendance optionnelle "aya"
-user = ["dep:aya"]
-
 [dependencies]
-# Bytemuck n'est pas optionnel, il est utile pour les deux cibles (user et eBPF)
-bytemuck = { version = "1", features = ["derive"] }
-# Aya est optionnel, car le code eBPF n'en a pas besoin ici
-aya = { version = "0.11", optional = true } # Mettez la même version que votre programme principal
+# Héritez des versions
+bytemuck = { workspace = true }
+# aya est optionnel ici
+aya = { workspace = true, optional = true }
 
 [lib]
 crate-type = ["lib", "rlib"]

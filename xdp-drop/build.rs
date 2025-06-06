@@ -1,6 +1,8 @@
 // xdp-drop/build.rs
 use anyhow::{anyhow, Context as _};
 use aya_build::{cargo_metadata, Toolchain};
+use aya::BpfBuilder; // Facultatif pour certains cas
+use aya::build::BuildCommand; // ✅ Le bon impor
 use std::env;
 use std::fs;
 use std::path::PathBuf; // Garder pour out_dir qui vient de env::var
@@ -36,10 +38,6 @@ fn main() -> anyhow::Result<()> {
     cmd.toolchain(Toolchain::default());
     cmd.target_dir("target-ebpf"); // <-- important : dossier isolé
     cmd.build().context(format!(
-        "Échec de la compilation du programme eBPF à partir du package '{}'",
-        ebpf_package.name
-    ))?;
-    .context(format!(
         "Échec de la compilation du programme eBPF à partir du package '{}'",
         ebpf_package.name
     ))?;

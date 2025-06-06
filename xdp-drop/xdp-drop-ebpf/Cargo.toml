@@ -1,22 +1,35 @@
+# Fichier : /root/FirewallIA/xdp-drop/xdp-drop-ebpf/Cargo.toml
+
 [package]
 name = "xdp-drop-ebpf"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aya-ebpf = "0.1.1"
-aya-log-ebpf = "0.1.1"
+aya-ebpf = "0.1.1" # ou la version que tu utilises
+aya-log-ebpf = "0.1.1" # ou la version que tu utilises
 xdp-drop-common = { path = "../xdp-drop-common" }
-network-types = "0.0.7"
-
-[build-dependencies]
-which = { version = "7.0.0", default-features = false }
+network-types = "0.0.7" # ou la version que tu utilises
 
 [lib]
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 
-[[bin]]
-name = "xdp-drop"
-path = "src/main.rs"
-    
+[profile.dev]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = "abort"
+incremental = false
+codegen-units = 1
+rpath = false
+
+[profile.release]
+lto = true
+panic = "abort"
+codegen-units = 1
+
+# Il est bon d'avoir ça pour définir la racine du projet
+[workspace]

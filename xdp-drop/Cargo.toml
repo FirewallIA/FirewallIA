@@ -7,9 +7,9 @@ edition = "2021"
 
 # Définit le workspace et ses membres
 members = [
-    "/xdp-drop-common",
-    "/xdp-drop-ebpf",
-    "/xdp-drop-cli",
+    "xdp-drop-common",
+    "xdp-drop-ebpf",
+    "xdp-drop-cli",
 ]
 
 # Centralise toutes les versions des dépendances ici
@@ -57,8 +57,8 @@ flexi_logger = { workspace = true }
 log = { workspace = true }
 
 # Dépendances vers les autres crates du workspace
-xdp-drop-common = { path = "../xdp-drop-common", features = ["user"] }
-xdp-drop-ebpf = { path = "../xdp-drop-ebpf" }
+xdp-drop-common = { path = "xdp-drop-common", features = ["user"] }
+xdp-drop-ebpf = { path = "xdp-drop-ebpf" }
 
 # Dépendances pour le script de build
 [build-dependencies]

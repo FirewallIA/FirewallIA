@@ -12,6 +12,10 @@ network-types = "0.0.7"
 [build-dependencies]
 which = { version = "7.0.0", default-features = false }
 
+[lib]
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
 [[bin]]
 name = "xdp-drop"
 path = "src/main.rs"

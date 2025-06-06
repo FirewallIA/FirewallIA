@@ -28,12 +28,11 @@ pub struct IpPort {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Pod, Zeroable)]
 pub struct ConnectionKey {
     pub src_ip: u32,
-    pub src_port: u16,
     pub dst_ip: u32,
+    pub src_port: u16,
     pub dst_port: u16,
     pub protocol: u8,
-    pub _pad1: u8,
-    pub _pad2: u16,
+    pub _pad: [u8; 3], // Remplacer _pad1 et _pad2 par un seul padding explicite de 3 octets
 }
 
 
@@ -68,13 +67,13 @@ pub enum Protocol {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 pub struct ConnectionValue {
-    pub state: State,
-    pub protocol: Protocol,
     pub last_seen_ns: u64,
+    pub state: u8,
+    pub protocol: u8,
+    pub _pad: [u8; 6],
 }
-
 // Bytemuck ne peut pas dériver Pod pour les enums avec des données ou les unions complexes
 // On doit l'implémenter manuellement si nécessaire ou simplifier la structure.
 // Pour l'instant, simplifions en ne dérivant Pod que sur les structures simples.

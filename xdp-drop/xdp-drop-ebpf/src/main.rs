@@ -3,6 +3,12 @@
     #![no_std]
     #![no_main]
     #![allow(nonstandard_style, dead_code, unused_imports)]
+    use core::panic::PanicInfo;
+
+    #[panic_handler]
+    fn panic(_info: &PanicInfo) -> ! {
+        loop {}
+    }
 
     use aya_ebpf::{
         bindings::xdp_action,

@@ -82,6 +82,3 @@ pub struct ConnectionValue {
 // Il faudra peut-être adapter ton code eBPF.
 // La structure que tu avais avec `ConnStateVariant` est aussi difficilement compatible Pod.
 // C'est un problème connu. On va le régler après la compilation.
-
-// Pour que ça compile, on va tricher et ne pas mettre Pod sur les structures complexes.
-unsafe impl Pod for ConnectionValue {}

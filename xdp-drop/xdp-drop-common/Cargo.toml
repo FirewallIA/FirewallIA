@@ -14,7 +14,7 @@ user = ["dep:aya"]
 
 [dependencies]
 # Hérite des versions du workspace
-bytemuck = { workspace = true }
+bytemuck = { version = "1.12", features = ["derive", "zeroable"] }
 # aya est une dépendance optionnelle, activée par la feature "user"
 aya = { workspace = true, optional = true }
 

@@ -62,7 +62,7 @@ xdp-drop-ebpf = { path = "xdp-drop-ebpf" }
 
 # Dépendances pour le script de build
 [build-dependencies]
-aya-builder = "0.11.0"
+aya-build = { git = "https://github.com/aya-rs/aya" }
 
 # Configuration du binaire principal
 [[bin]]

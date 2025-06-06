@@ -31,6 +31,7 @@ log = "0.4.20"
 network-types = "0.0.5"
 which = "4.4.2"
 
+
 # Centralise les profils de compilation
 [profile.dev]
 opt-level = 1
@@ -64,6 +65,8 @@ xdp-drop-ebpf = { path = "xdp-drop-ebpf" }
 # Dépendances pour le script de build
 [build-dependencies]
 aya-build = { git = "https://github.com/aya-rs/aya" }
+anyhow = { workspace = true } 
+tonic-build = { version = "0.10.2", features = ["prost"] }
 
 # Configuration du binaire principal
 [[bin]]

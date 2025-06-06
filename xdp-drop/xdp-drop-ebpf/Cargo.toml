@@ -6,11 +6,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Héritez des versions du workspace
+# Hérite des versions définies dans le workspace
 aya-ebpf = { workspace = true }
 aya-log-ebpf = { workspace = true }
 network-types = { workspace = true }
 xdp-drop-common = { path = "../xdp-drop-common" }
+
+# Dépendances pour le script de build de ce crate eBPF
+[build-dependencies]
+which = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

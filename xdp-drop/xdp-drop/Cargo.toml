@@ -5,51 +5,66 @@ name = "xdp-drop"
 version = "0.1.0"
 edition = "2021"
 
-# -> SECTION IMPORTANTE À AJOUTER/MODIFIER <-
+# Définit le workspace et ses membres
 [workspace]
 members = [
     "xdp-drop-common",
     "xdp-drop-ebpf",
 ]
 
-# Définissez les versions des dépendances ici UNE SEULE FOIS
+# Centralise toutes les versions des dépendances ici
 [workspace.dependencies]
-aya = { version = "0.11.0", features = ["async_tokio"] }
+aya = "0.11.0"
 aya-log = "0.11.0"
 aya-ebpf = "0.11.0"
 aya-log-ebpf = "0.11.0"
-bytemuck = { version = "1.12", features = ["derive"] }
-anyhow = "1.0"
-clap = { version = "4.0", features = ["derive"] }
-tokio = { version = "1.21", features = ["full"] }
+bytemuck = { version = "1.12", features = ["derive", "zeroable"] }
+anyhow = "1.0.75"
+clap = { version = "4.4.6", features = ["derive"] }
+tokio = { version = "1.32.0", features = ["full"] }
+tokio-postgres = { version = "0.7.10", features = ["with-chrono-0_4"] }
+tonic = "0.10.2"
+prost = "0.12.1"
+flexi_logger = "0.27.3"
+log = "0.4.20"
 network-types = "0.0.5"
-# ... et toutes vos autres dépendances (tonic, prost, etc.)
+which = "4.4.2"
 
-# Définissez les profils ici UNE SEULE FOIS
+# Centralise les profils de compilation
 [profile.dev]
 opt-level = 1
 debug = true
+lto = "off"
 
 [profile.release]
 opt-level = 3
 debug = false
-panic = "abort"
 lto = true
+panic = "abort"
+codegen-units = 1
 
-
-# VOS DÉPENDANCES POUR CE PACKAGE SPÉCIFIQUE
+# Dépendances spécifiques pour le programme user-space
 [dependencies]
-# Utilisez la syntaxe `workspace = true` pour hériter des versions
-aya = { workspace = true }
+aya = { workspace = true, features = ["async_tokio"] }
 aya-log = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
-# ... etc ...
-xdp-drop-common = { path = "xdp-drop-common" }
+tokio-postgres = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+flexi_logger = { workspace = true }
+log = { workspace = true }
+
+# Dépendances vers les autres crates du workspace
+xdp-drop-common = { path = "xdp-drop-common", features = ["user"] }
 xdp-drop-ebpf = { path = "xdp-drop-ebpf" }
 
-# ... votre section [[bin]] ...
-
+# Dépendances pour le script de build
 [build-dependencies]
-aya-builder = "0.11" # ou votre build-dependency actuelle
+aya-builder = "0.11.0"
+
+# Configuration du binaire principal
+[[bin]]
+name = "xdp-drop"
+path = "src/main.rs"

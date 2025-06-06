@@ -5,10 +5,17 @@ name = "xdp-drop-common"
 version = "0.1.0"
 edition = "2021"
 
+# Définit les features pour ce crate
+[features]
+default = []
+# La feature "user" est utilisée par le programme principal
+# pour activer les dépendances qui ne sont pas nécessaires pour le code eBPF.
+user = ["dep:aya"]
+
 [dependencies]
-# Héritez des versions
+# Hérite des versions du workspace
 bytemuck = { workspace = true }
-# aya est optionnel ici
+# aya est une dépendance optionnelle, activée par la feature "user"
 aya = { workspace = true, optional = true }
 
 [lib]

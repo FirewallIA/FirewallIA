@@ -32,10 +32,13 @@ fn main() -> anyhow::Result<()> {
     println!("cargo:info=Package eBPF trouvé: {} (manifest: {})", ebpf_package.name, ebpf_package.manifest_path);
 
     println!("cargo:info=Lancement de la compilation eBPF pour le package: {}", ebpf_package.name);
-    aya_build::build_ebpf(
-        std::iter::once(ebpf_package.clone()),
-        Toolchain::default(),
-    )
+    let mut cmd = aya_build::BuildCommand::new(std::iter::once(ebpf_package.clone()));
+    cmd.toolchain(Toolchain::default());
+    cmd.target_dir("target-ebpf"); // <-- important : dossier isolé
+    cmd.build().context(format!(
+        "Échec de la compilation du programme eBPF à partir du package '{}'",
+        ebpf_package.name
+    ))?;
     .context(format!(
         "Échec de la compilation du programme eBPF à partir du package '{}'",
         ebpf_package.name

@@ -10,6 +10,7 @@ aya-ebpf = "0.1.1" # ou la version que tu utilises
 aya-log-ebpf = "0.1.1" # ou la version que tu utilises
 xdp-drop-common = { path = "../xdp-drop-common" }
 network-types = "0.0.7" # ou la version que tu utilises
+which = "4.2"
 
 [lib]
 path = "src/lib.rs"

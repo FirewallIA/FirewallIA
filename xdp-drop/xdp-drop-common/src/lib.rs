@@ -1,6 +1,11 @@
 // Dans xdp-drop-common/src/lib.rs
 #![no_std]
+use core::panic::PanicInfo;
 
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    loop {}
+}
 #[cfg(feature = "user")]
 use aya::Pod; // Nécessaire pour implémenter le TRAIT Pod
 

@@ -23,7 +23,7 @@ fn main() -> anyhow::Result<()> {
     let ebpf_package = cargo_meta
         .packages
         .iter()
-        .find(|p| p.name == "xdp-drop-ebpf")
+        .find(|p| p.name.as_str() == "xdp-drop-ebpf")
         .ok_or_else(|| {
             anyhow!("Le package eBPF 'xdp-drop-ebpf' n'a pas été trouvé dans l'espace de travail.")
         })?;

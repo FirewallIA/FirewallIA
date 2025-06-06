@@ -6,6 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 # Définit le workspace et ses membres
+[workspace]
 members = [
     "xdp-drop-common",
     "xdp-drop-ebpf",

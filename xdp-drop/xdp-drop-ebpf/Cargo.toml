@@ -30,6 +30,3 @@ rpath = false
 lto = true
 panic = "abort"
 codegen-units = 1
-
-# Il est bon d'avoir ça pour définir la racine du projet
-[workspace]

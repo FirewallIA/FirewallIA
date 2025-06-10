@@ -16,6 +16,21 @@ xdp-drop-common = { path = "../xdp-drop-common", default-features = false}
 [build-dependencies]
 which = { workspace = true }
 
+# AJOUTEZ TOUTE CETTE SECTION
+[profile.dev]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = "abort" # <--- LA LIGNE LA PLUS IMPORTANTE
+codegen-units = 1
+
+[profile.release]
+lto = true
+panic = "abort" # <--- LA LIGNE LA PLUS IMPORTANTE
+codegen-units = 1
+
 [lib]
 path = "src/lib.rs"
 crate-type = ["staticlib"]

@@ -10,7 +10,7 @@ edition = "2021"
 aya-ebpf = { workspace = true }
 aya-log-ebpf = { workspace = true }
 network-types = { workspace = true }
-xdp-drop-common = { path = "../xdp-drop-common" }
+xdp-drop-common = { path = "../xdp-drop-common", default-features = false}
 
 # Dépendances pour le script de build de ce crate eBPF
 [build-dependencies]

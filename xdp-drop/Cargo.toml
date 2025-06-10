@@ -1,74 +1,8 @@
-# Fichier : /root/FirewallIA/xdp-drop/Cargo.toml
-
-[package]
-name = "xdp-drop"
-version = "0.1.0"
-edition = "2021"
-
 # Définit le workspace et ses membres
 [workspace]
 members = [
+    "xd^p-drop",
     "xdp-drop-common",
     "xdp-drop-ebpf",
     "xdp-drop-cli",
 ]
-
-# Centralise toutes les versions des dépendances ici
-[workspace.dependencies]
-aya = "0.11.0"
-aya-log = "0.2.1"
-aya-ebpf = "0.1.1"
-aya-log-ebpf = "0.1.1"
-bytemuck = { version = "1.12", features = ["derive"] }
-anyhow = "1.0.75"
-clap = { version = "4.4.6", features = ["derive"] }
-tokio = { version = "1.32.0", features = ["full"] }
-tokio-postgres = { version = "0.7.10", features = ["with-chrono-0_4"] }
-tonic = "0.10.2"
-prost = "0.12.1"
-flexi_logger = "0.27.3"
-log = "0.4.20"
-network-types = "0.0.5"
-which = "4.4.2"
-
-
-# Centralise les profils de compilation
-[profile.dev]
-opt-level = 1
-debug = true
-lto = "off"
-
-[profile.release]
-opt-level = 3
-debug = false
-lto = true
-panic = "abort"
-codegen-units = 1
-
-# Dépendances spécifiques pour le programme user-space
-[dependencies]
-aya = { workspace = true, features = ["async_tokio"] }
-aya-log = { workspace = true }
-anyhow = { workspace = true }
-clap = { workspace = true }
-tokio = { workspace = true }
-tokio-postgres = { workspace = true }
-tonic = { workspace = true }
-prost = { workspace = true }
-flexi_logger = { workspace = true }
-log = { workspace = true }
-
-# Dépendances vers les autres crates du workspace
-xdp-drop-common = { path = "xdp-drop-common", features = ["user"] }
-xdp-drop-ebpf = { path = "xdp-drop-ebpf" }
-
-# Dépendances pour le script de build
-[build-dependencies]
-aya-build = { git = "https://github.com/aya-rs/aya" }
-anyhow = { workspace = true } 
-tonic-build = { version = "0.10.2", features = ["prost"] }
-
-# Configuration du binaire principal
-[[bin]]
-name = "xdp-drop"
-path = "src/main.rs"

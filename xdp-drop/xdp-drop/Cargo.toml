@@ -6,24 +6,6 @@ version = "0.1.0"
 edition = "2021"
 
 
-# Centralise toutes les versions des dépendances ici
-[workspace.dependencies]
-aya = "0.11.0"
-aya-log = "0.2.1"
-aya-ebpf = "0.1.1"
-aya-log-ebpf = "0.1.1"
-bytemuck = { version = "1.12", features = ["derive"] }
-anyhow = "1.0.75"
-clap = { version = "4.4.6", features = ["derive"] }
-tokio = { version = "1.32.0", features = ["full"] }
-tokio-postgres = { version = "0.7.10", features = ["with-chrono-0_4"] }
-tonic = "0.10.2"
-prost = "0.12.1"
-flexi_logger = "0.27.3"
-log = "0.4.20"
-network-types = "0.0.5"
-which = "4.4.2"
-
 
 # Centralise les profils de compilation
 [profile.dev]

@@ -29,7 +29,7 @@ log = { workspace = true }
 
 # Dépendances vers les autres crates du workspace
 xdp-drop-common = { path = "../xdp-drop-common", features = ["user"] }
-xdp-drop-ebpf = { path = "../xdp-drop-ebpf" }
+# xdp-drop-ebpf = { path = "../xdp-drop-ebpf" }
 
 # Dépendances pour le script de build
 [build-dependencies]

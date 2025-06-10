@@ -1,6 +1,6 @@
 // Fichier : /root/FirewallIA/xdp-drop/xdp-drop-common/src/lib.rs
 
-// SUPPRIME CETTE LIGNE -> #![no_std]
+#![no_std]
 
 // Tu auras besoin de bytemuck pour dériver Pod.
 use bytemuck::{Pod, Zeroable};

@@ -1,11 +1,19 @@
 # Définit le workspace et ses membres
 [workspace]
+resolver = "2"
 members = [
     "xdp-drop",
     "xdp-drop-common",
     "xdp-drop-ebpf",
     "xdp-drop-cli",
 ]
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = true
+panic = "abort"
+codegen-units = 1
 
 # Centralise toutes les versions des dépendances ici
 [workspace.dependencies]

@@ -13,12 +13,6 @@ opt-level = 1
 debug = true
 lto = "off"
 
-[profile.release]
-opt-level = 3
-debug = false
-lto = true
-panic = "abort"
-codegen-units = 1
 
 # Dépendances spécifiques pour le programme user-space
 [dependencies]

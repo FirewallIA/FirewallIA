@@ -1,7 +1,7 @@
 # Définit le workspace et ses membres
 [workspace]
 members = [
-    "xd^p-drop",
+    "xdp-drop",
     "xdp-drop-common",
     "xdp-drop-ebpf",
     "xdp-drop-cli",

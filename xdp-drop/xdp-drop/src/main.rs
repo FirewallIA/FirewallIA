@@ -429,7 +429,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let grpc_addr = "[::1]:50051".parse().context("Adresse gRPC invalide")?;
 
     let firewall_service = MyFirewallService {
-        db_client: Arc::clone(&pg_client) // <--- MODIFICATION ICI: cloner l'Arc
+        db_client: Arc::clone(&pg_client) 
     };
     info!("Service Firewall gRPC en cours de création...");
 

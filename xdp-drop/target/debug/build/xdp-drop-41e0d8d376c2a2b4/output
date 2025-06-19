@@ -1,3 +1,0 @@
-cargo:rerun-if-changed=/root/FirewallIA/xdp-drop/xdp-drop-ebpf
-cargo:warning=   Compiling xdp-drop-ebpf v0.1.0 (/root/FirewallIA/xdp-drop/xdp-drop-ebpf)
-cargo:warning=    Finished `release` profile [optimized] target(s) in 9.76s

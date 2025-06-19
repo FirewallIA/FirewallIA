@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package firewall;
+
+import "google/protobuf/empty.proto";
+
+service FirewallService {
+    rpc GetStatus (google.protobuf.Empty) returns (FirewallStatus);
+    rpc ListRules (google.protobuf.Empty) returns (RuleListResponse); // Nouvelle RPC
+    rpc CreateRule (CreateRuleRequest) returns (CreateRuleResponse);
+    rpc DeleteRule (DeleteRuleRequest) returns (DeleteRuleResponse);
+}
+
+message FirewallStatus {
+    string status = 1; // "UP" ou "DOWN"
+}
+
+// Message pour une seule règle
+message RuleInfo {
+    int32 id = 1;
+    string source_ip = 2;
+    string dest_ip = 3;
+    string source_port = 4; // Utiliser string pour pouvoir mettre "*"
+    string dest_port = 5;   // Utiliser string pour pouvoir mettre "*"
+    string action = 6;
+    string protocol = 7;
+    int32 usage_count = 8;
+}
+
+// Message pour la liste des règles
+message RuleListResponse {
+    repeated RuleInfo rules = 1;
+}
+
+// Message pour la requête de création de règle
+message RuleData { 
+    string source_ip = 1;
+    string dest_ip = 2;
+    string source_port = 3; // Peut être "*" ou un numéro
+    string dest_port = 4;   // Peut être "*" ou un numéro
+    string action = 5;      // "ALLOW", "DENY"
+    string protocol = 6;    // "TCP", "UDP", "ANY", etc.
+}
+
+message CreateRuleRequest {
+    RuleData rule = 1;
+}
+
+// Message pour la réponse de création de règle
+message CreateRuleResponse {
+    int32 created_rule_id = 1; // L'ID de la règle nouvellement créée
+    string message = 2;        // Message de statut, ex: "Règle créée avec succès"
+}
+
+// Message pour la requête de supression de règle
+message RuleDataDelete { 
+    int32 id = 1;
+}
+
+message DeleteRuleRequest {
+    RuleDataDelete rule = 1;
+}
+
+// Message pour la réponse de supression de règle
+message DeleteRuleResponse {
+    int32 delete_rule_id = 1; // L'ID de la règle nouvellement créée
+    string message = 2;        // Message de statut, ex: "Règle créée avec succès"
+}

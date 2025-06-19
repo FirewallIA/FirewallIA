@@ -1,0 +1,20 @@
+INFO [xdp_drop] 📋 Règles trouvées dans la base :
+INFO [xdp_drop] INFO IP : 192.168.1.101 22
+INFO [xdp_drop] 🛡️ Règle #4: 192.168.1.101:1255 → 192.168.1.1:22 | Action: deny | Proto: TCP | Utilisations: 0
+INFO [xdp_drop] 🔥 Le firewall est en marche !
+INFO [xdp_drop] ⏳ Appuyez sur Ctrl-C pour arrêter...
+INFO [xdp_drop] Checking IP src : 192.168.1.101, IP dest : 192.168.2.101 Port: 22 Status : ALLOWED
+INFO [xdp_drop] IP SRC: 192.168.1.101:51120, DST: 192.168.2.101:22, ACTION: Pass
+INFO [xdp_drop] 🛑 Arrêt du firewall...
+INFO [xdp_drop] 📋 Règles trouvées dans la base :
+INFO [xdp_drop] INFO IP : 192.168.1.101 22
+INFO [xdp_drop] 🛡️ Règle #4: 192.168.1.101:1255 → 192.168.1.1:22 | Action: deny | Proto: TCP | Utilisations: 0
+INFO [xdp_drop] 🔥 Le firewall est en marche !
+INFO [xdp_drop] ⏳ Appuyez sur Ctrl-C pour arrêter...
+INFO [xdp_drop] 🛑 Arrêt du firewall...
+INFO [xdp_drop] 📋 Règles trouvées dans la base :
+INFO [xdp_drop] INFO IP : 192.168.1.101 22
+INFO [xdp_drop] 🛡️ Règle #4: 192.168.1.101:1255 → 192.168.1.1:22 | Action: deny | Proto: TCP | Utilisations: 0
+INFO [xdp_drop] 🔥 Le firewall est en marche !
+INFO [xdp_drop] ⏳ Appuyez sur Ctrl-C pour arrêter...
+INFO [xdp_drop] 🛑 Arrêt du firewall...

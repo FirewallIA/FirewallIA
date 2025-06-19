@@ -13,7 +13,7 @@ fn main() -> anyhow::Result<()> {
 
     let ebpf_package = packages
         .iter()
-        .find(|p| p.name == "xdp-drop-ebpf")
+        .find(|p| p.name.as_str() == "xdp-drop-ebpf")
         .ok_or_else(|| anyhow!("xdp-drop-ebpf package not found"))?;
 
     // Compilation du code eBPF

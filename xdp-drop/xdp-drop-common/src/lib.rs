@@ -40,3 +40,31 @@ pub struct IpPort {
 unsafe impl aya::Pod for IpPort {} // Ajoutez ceci pour IpPort, comme pour PacketLog
 
 // --- Autres définitions partagées si nécessaire ---
+// Clé pour le suivi de connexion (5-tuple)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(C)]
+pub struct ConnectionKey {
+    pub src_ip: u32,
+    pub dst_ip: u32,
+    pub src_port: u16,
+    pub dst_port: u16,
+    pub protocol: u8,
+    pub _pad: [u8; 3], // Alignement
+}
+
+// États possibles pour une connexion TCP
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TcpState {
+    SynSent = 1,      // Un SYN a été envoyé, en attente de SYN-ACK
+    Established = 2,  // La connexion est établie (SYN-ACK reçu)
+    Closing = 3,      // Un FIN a été vu
+}
+
+// NOUVEAU: Valeur pour la map de suivi
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ConnectionValue {
+    pub state: u32,
+    // On pourrait ajouter un timestamp pour le nettoyage, mais gardons simple pour l'instant
+}

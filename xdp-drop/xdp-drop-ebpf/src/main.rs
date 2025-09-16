@@ -1,7 +1,6 @@
-// In xdp-drop-ebpf/src/main.rs
 #![no_std]
 #![no_main]
-#![allow(nonstandard_style, dead_code)] // dead_code for unused parts during dev
+#![allow(nonstandard_style, dead_code)]
 
 use aya_ebpf::{
     bindings::xdp_action,
@@ -9,29 +8,35 @@ use aya_ebpf::{
     maps::HashMap,
     programs::XdpContext,
 };
-use aya_log_ebpf::info; // For logging from eBPF
+use aya_log_ebpf::info;
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{Ipv4Hdr, IpProto},
     tcp::TcpHdr,
     udp::UdpHdr,
 };
-use xdp_drop_common::IpPort; // Import your shared struct
 
-// Panic handler (required for no_std)
+// NOUVEAU: Importer les structures partagées pour le pare-feu stateful
+use xdp_drop_common::{ConnectionKey, ConnectionValue, IpPort, TcpState};
+
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-// The eBPF map for storing firewall rules.
-// Key: IpPort (source IP, dest IP, dest port)
-// Value: u32 (action code, e.g., 1 for DENY, 2 for ALLOW)
+// Map pour les règles stateless (votre BLOCKLIST existante)
 #[map]
 static BLOCKLIST: HashMap<IpPort, u32> = HashMap::<IpPort, u32>::with_max_entries(1024, 0);
 
-// Action constants (must match userspace definitions)
+// NOUVEAU: La map pour le suivi des connexions (la "conntrack table")
+// Clé: 5-tuple (IP/ports source/dest, protocole)
+// Valeur: État de la connexion (ex: SynSent, Established)
+#[map]
+static CONNTRAK_MAP: HashMap<ConnectionKey, ConnectionValue> =
+    HashMap::<ConnectionKey, ConnectionValue>::with_max_entries(65536, 0);
+
+// Constantes pour les actions, comme avant
 const ACTION_DENY_FROM_MAP: u32 = 1;
 const ACTION_ALLOW_FROM_MAP: u32 = 2;
 
@@ -39,11 +44,10 @@ const ACTION_ALLOW_FROM_MAP: u32 = 2;
 pub fn xdp_firewall(ctx: XdpContext) -> u32 {
     match try_xdp_firewall(ctx) {
         Ok(ret) => ret,
-        Err(_) => xdp_action::XDP_ABORTED, // Abort on error (e.g., out-of-bounds access)
+        Err(_) => xdp_action::XDP_ABORTED,
     }
 }
 
-// Helper to safely get a pointer to data in the packet.
 #[inline(always)]
 unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     let start = ctx.data();
@@ -51,117 +55,121 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     let len = core::mem::size_of::<T>();
 
     if start + offset + len > end {
-        return Err(()); // Offset + size is out of bounds
+        return Err(());
     }
-
     Ok((start + offset) as *const T)
 }
 
-// Checks the BLOCKLIST map for a matching rule.
-// Returns Some(action_value) if a rule is found, None otherwise.
+// La fonction pour la BLOCKLIST reste utile pour les règles stateless prioritaires
 #[inline(always)]
 fn check_firewall_rule(key: &IpPort) -> Option<u32> {
     unsafe { BLOCKLIST.get(key).copied() }
 }
 
-// Main XDP processing logic
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
-    // 1. Parse Ethernet Header
+    // 1. Parsage des en-têtes Ethernet et IP
     let eth_hdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
-    // let src_mac = unsafe { (*eth_hdr).src_addr }; // Example: if you need MACs
-    // let dst_mac = unsafe { (*eth_hdr).dst_addr };
+    if unsafe { (*eth_hdr).ether_type } != EtherType::Ipv4 {
+        return Ok(xdp_action::XDP_PASS); // On ne traite que l'IPv4
+    }
 
-    // Check if it's an IPv4 packet, pass others
-    match unsafe { (*eth_hdr).ether_type } {
-        EtherType::Ipv4 => {} // Continue processing
-        _ => {
-            // info!(&ctx, "Passing non-IPv4 packet");
+    let ipv4_hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
+    let source_ip_be = unsafe { (*ipv4_hdr).src_addr };
+    let dest_ip_be = unsafe { (*ipv4_hdr).dst_addr };
+    let protocol = unsafe { (*ipv4_hdr).proto };
+
+    // --- LOGIQUE STATELESS (PRIORITÉ 1) ---
+    // On vérifie d'abord la blocklist. Ces règles priment sur la logique stateful.
+    // NOTE: On utilise un port 0 pour matcher "n'importe quel port", ce qui est une
+    // simplification. Vous pourriez rendre cela plus sophistiqué.
+    let stateless_key = IpPort {
+        addr: source_ip_be,
+        addr_dest: dest_ip_be,
+        port: 0, 
+        _pad: 0,
+    };
+    if let Some(action) = check_firewall_rule(&stateless_key) {
+        if action == ACTION_DENY_FROM_MAP {
+            info!(&ctx, "BLOCKLIST: Deny S_IP={:i}", u32::from_be(source_ip_be));
+            return Ok(xdp_action::XDP_DROP);
+        }
+        if action == ACTION_ALLOW_FROM_MAP {
+            info!(&ctx, "BLOCKLIST: Allow S_IP={:i}", u32::from_be(source_ip_be));
             return Ok(xdp_action::XDP_PASS);
         }
     }
 
-    // 2. Parse IPv4 Header
-    let ipv4_hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
-    let source_ip_be = unsafe { (*ipv4_hdr).src_addr }; // Big-endian (network order)
-    let dest_ip_be = unsafe { (*ipv4_hdr).dst_addr };   // Big-endian (network order)
-    let protocol = unsafe { (*ipv4_hdr).proto };
+    // --- NOUVELLE LOGIQUE STATEFUL (pour TCP) ---
+    // Pour l'instant, on se concentre sur TCP. On laisse passer les autres protocoles.
+    if protocol != IpProto::Tcp {
+        return Ok(xdp_action::XDP_PASS);
+    }
 
-    // Calculate offset to the transport layer header
-    // IHL (Internet Header Length) is in 32-bit words, so multiply by 4 for bytes.
+    // Parsage de l'en-tête TCP
     let transport_offset = EthHdr::LEN + (unsafe { (*ipv4_hdr).ihl() } as usize * 4);
+    let tcp_hdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
+    let src_port_be = unsafe { (*tcp_hdr).source };
+    let dst_port_be = unsafe { (*tcp_hdr).dest };
+    
+    // Extraction des drapeaux TCP importants
+    let is_syn = unsafe { (*tcp_hdr).syn() } == 1;
+    let is_ack = unsafe { (*tcp_hdr).ack() } == 1;
+    // let is_fin = unsafe { (*tcp_hdr).fin() } == 1;
+    // let is_rst = unsafe { (*tcp_hdr).rst() } == 1;
 
-    // 3. Parse Transport Header (TCP/UDP to get destination port)
-    // We are primarily interested in the destination port for firewall rules.
-    let dest_port_be: u16 = match protocol {
-        IpProto::Tcp => {
-            let tcp_hdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
-            unsafe { (*tcp_hdr).dest } // Big-endian (network order)
-        }
-        IpProto::Udp => {
-            let udp_hdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
-            unsafe { (*udp_hdr).dest } // Big-endian (network order)
-        }
-        _ => {
-            // For ICMP or other protocols, we might not have a port, or we can use 0.
-            // For simplicity, if it's not TCP/UDP, we'll treat dest_port as 0.
-            // A rule with port 0 could then act as a wildcard for "any port" for that protocol.
-            0 // Represent "any" or "no port"
-        }
-    };
+    // NOUVEAU: Définir ce qui est "interne" vs "externe".
+    // À ADAPTER à votre réseau. Ici, on prend l'exemple de 10.0.2.0/24.
+    // Les IPs sont lues en big-endian (ordre réseau), donc on utilise des constantes
+    // en big-endian pour la comparaison.
+    let internal_network_prefix = u32::from_be(0x0A000200); // 10.0.2.0
+    let internal_network_mask = u32::from_be(0xFFFFFF00); // Masque /24
 
-    // 4. Construct the key for the firewall map lookup
-    let rule_key = IpPort {
-        addr: source_ip_be,    // Source IP (already network byte order)
-        addr_dest: dest_ip_be, // Destination IP (already network byte order)
-        port: dest_port_be,    // Destination Port (already network byte order)
-        _pad: 0,               // Padding
-    };
+    let is_from_internal = (source_ip_be & internal_network_mask) == internal_network_prefix;
 
-    // 5. Perform Firewall Logic: Check the map
-    let final_action = match check_firewall_rule(&rule_key) {
-        Some(action_value_from_map) => {
-            // A rule was found in the map
-            if action_value_from_map == ACTION_DENY_FROM_MAP {
-                info!(
-                    &ctx,
-                    "DENY rule match: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}",
-                    u32::from_be(source_ip_be), // Log in host byte order for readability
-                    u32::from_be(dest_ip_be),   // Log in host byte order
-                    u16::from_be(dest_port_be), // Log in host byte order
-                    protocol as u8
-                );
-                xdp_action::XDP_DROP
-            } else if action_value_from_map == ACTION_ALLOW_FROM_MAP {
-                info!(
-                    &ctx,
-                    "ALLOW rule match: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}",
-                    u32::from_be(source_ip_be),
-                    u32::from_be(dest_ip_be),
-                    u16::from_be(dest_port_be),
-                    protocol as u8
-                );
-                xdp_action::XDP_PASS
-            } else {
-                // Unknown action value from map, default to pass (or your chosen default)
-                info!(
-                    &ctx,
-                    "WARN: Unknown action {} from map for S_IP={:i}, D_IP={:i}, D_PORT={}. Passing.",
-                    action_value_from_map,
-                    u32::from_be(source_ip_be),
-                    u32::from_be(dest_ip_be),
-                    u16::from_be(dest_port_be)
-                );
-                xdp_action::XDP_PASS
-            }
-        }
-        None => {
-            // No specific rule found in the map. Default action is PASS.
-            // You could log this if needed for debugging, but it can be very verbose.
-            info!(&ctx, "No rule match for S_IP={:i}, D_IP={:i}, D_PORT={}. Passing by default.",
-                 u32::from_be(source_ip_be), u32::from_be(dest_ip_be), u16::from_be(dest_port_be));
-            xdp_action::XDP_PASS
-        }
-    };
+    // ÉTAPE 2: Gérer une nouvelle connexion SORTANTE (paquet SYN pur)
+    // Si le paquet vient de notre réseau interne, est un SYN et n'est pas un ACK,
+    // c'est une nouvelle tentative de connexion vers l'extérieur.
+    if is_syn && !is_ack && is_from_internal {
+        info!(
+            &ctx,
+            "STATEFUL: New outgoing SYN from {:i}:{} to {:i}:{}",
+            u32::from_be(source_ip_be),
+            u16::from_be(src_port_be),
+            u32::from_be(dest_ip_be),
+            u16::from_be(dst_port_be)
+        );
 
-    Ok(final_action)
+        // On construit la clé de connexion
+        let conn_key = ConnectionKey {
+            src_ip: source_ip_be,
+            dst_ip: dest_ip_be,
+            src_port: src_port_be,
+            dst_port: dst_port_be,
+            protocol: protocol as u8,
+            _pad: [0; 3],
+        };
+        
+        // On enregistre cette tentative dans notre map avec l'état "SynSent"
+        let new_value = ConnectionValue {
+            state: TcpState::SynSent as u32,
+        };
+        unsafe { CONNTRAK_MAP.insert(&conn_key, &new_value, 0).map_err(|_| ())? };
+
+        // On laisse passer ce paquet pour qu'il puisse initier la connexion.
+        return Ok(xdp_action::XDP_PASS);
+    }
+    
+    // Action par défaut pour cette étape de développement :
+    // - Bloquer le trafic entrant non sollicité pour la sécurité de base.
+    // - Laisser passer le reste du trafic sortant pour ne pas bloquer les
+    //   réponses des connexions que nous ne suivons pas encore.
+    
+    if !is_from_internal {
+        info!(&ctx, "STATEFUL: Drop unsolicited incoming packet from {:i}", u32::from_be(source_ip_be));
+        return Ok(xdp_action::XDP_DROP);
+    }
+
+    // On laisse passer les autres paquets sortants pour le moment.
+    // Ceci sera affiné dans les étapes suivantes.
+    Ok(xdp_action::XDP_PASS)
 }

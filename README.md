@@ -1,4 +1,6 @@
-📘 Guide d'installation -- FirewallIA sur Debian 1. Pré-requis Installer
+#📘 Guide d'installation -- FirewallIA sur Debian 
+
+1. Pré-requis Installer
 une Debian classique (version stable recommandée).
 
 2.  Installation des dépendances su - root apt update apt install git

@@ -9,3 +9,10 @@ default-members = ["xdp-drop", "xdp-drop-common"]
 [profile.release.package.xdp-drop-ebpf]
 debug = 2
 codegen-units = 1
+
+[workspace.dependencies]
+aya = { git = "https://github.com/aya-rs/aya", rev = "a7e3e6d" }
+aya-log = { git = "https://github.com/aya-rs/aya", rev = "a7e3e6d" }
+aya-log-common = { git = "https://github.com/aya-rs/aya", rev = "a7e3e6d" }
+aya-obj = { git = "https://github.com/aya-rs/aya", rev = "a7e3e6d" }
+aya-build = { git = "https://github.com/aya-rs/aya", rev = "a7e3e6d" }

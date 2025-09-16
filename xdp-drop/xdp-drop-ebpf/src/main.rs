@@ -157,8 +157,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         None => {
             // No specific rule found in the map. Default action is PASS.
             // You could log this if needed for debugging, but it can be very verbose.
-            // info!(&ctx, "No rule match for S_IP={:i}, D_IP={:i}, D_PORT={}. Passing by default.",
-            //     u32::from_be(source_ip_be), u32::from_be(dest_ip_be), u16::from_be(dest_port_be));
+            info!(&ctx, "No rule match for S_IP={:i}, D_IP={:i}, D_PORT={}. Passing by default.",
+                 u32::from_be(source_ip_be), u32::from_be(dest_ip_be), u16::from_be(dest_port_be));
             xdp_action::XDP_PASS
         }
     };

@@ -1,6 +1,6 @@
 use anyhow::Context;
 use aya::{
-    Bpf,
+    Ebpf,
     include_bytes_aligned,
     maps::HashMap,
     programs::{Xdp, XdpFlags},
@@ -318,7 +318,7 @@ async fn main() -> Result<(), anyhow::Error> {
     info!("Logger initialisé.");
 
     // Chargement du programme eBPF
-    let mut bpf = Bpf::load(include_bytes_aligned!(concat!(
+    let mut bpf = Ebpf::load(include_bytes_aligned!(concat!(
         env!("OUT_DIR"),
         "/xdp-drop"
     )))
@@ -396,7 +396,7 @@ async fn main() -> Result<(), anyhow::Error> {
             .context(format!("IP source invalide pour la règle {id}"))?;
         let ip_dest_addr = dest_ip.parse::<std::net::Ipv4Addr>()
             .context(format!("IP destination invalide pour la règle {id}"))?;
-        let port_val = dest_port.unwrap_or(0) as u16;
+       let port_val = (dest_port.unwrap_or(0) as u16).to_be();
 
         let key = IpPort {
             addr: u32::from(ip_addr).to_be(),

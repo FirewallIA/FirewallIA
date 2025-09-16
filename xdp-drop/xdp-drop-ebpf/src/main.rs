@@ -1,3 +1,4 @@
+
 #![no_std]
 #![no_main]
 #![allow(nonstandard_style, dead_code)]
@@ -16,7 +17,7 @@ use network_types::{
     udp::UdpHdr,
 };
 
-// NOUVEAU: Importer les structures partagées pour le pare-feu stateful
+// Importer les structures partagées pour le pare-feu stateful
 use xdp_drop_common::{ConnectionKey, ConnectionValue, IpPort, TcpState};
 
 #[cfg(not(test))]
@@ -25,18 +26,16 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-// Map pour les règles stateless (votre BLOCKLIST existante)
+// Map pour les règles stateless (BLOCKLIST)
 #[map]
 static BLOCKLIST: HashMap<IpPort, u32> = HashMap::<IpPort, u32>::with_max_entries(1024, 0);
 
-// NOUVEAU: La map pour le suivi des connexions (la "conntrack table")
-// Clé: 5-tuple (IP/ports source/dest, protocole)
-// Valeur: État de la connexion (ex: SynSent, Established)
+// Map pour le suivi des connexions (la "conntrack table")
 #[map]
 static CONNTRAK_MAP: HashMap<ConnectionKey, ConnectionValue> =
     HashMap::<ConnectionKey, ConnectionValue>::with_max_entries(65536, 0);
 
-// Constantes pour les actions, comme avant
+// Constantes pour les actions
 const ACTION_DENY_FROM_MAP: u32 = 1;
 const ACTION_ALLOW_FROM_MAP: u32 = 2;
 
@@ -60,7 +59,6 @@ unsafe fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     Ok((start + offset) as *const T)
 }
 
-// La fonction pour la BLOCKLIST reste utile pour les règles stateless prioritaires
 #[inline(always)]
 fn check_firewall_rule(key: &IpPort) -> Option<u32> {
     unsafe { BLOCKLIST.get(key).copied() }
@@ -70,7 +68,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     // 1. Parsage des en-têtes Ethernet et IP
     let eth_hdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
     if unsafe { (*eth_hdr).ether_type } != EtherType::Ipv4 {
-        return Ok(xdp_action::XDP_PASS); // On ne traite que l'IPv4
+        return Ok(xdp_action::XDP_PASS);
     }
 
     let ipv4_hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
@@ -79,13 +77,10 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let protocol = unsafe { (*ipv4_hdr).proto };
 
     // --- LOGIQUE STATELESS (PRIORITÉ 1) ---
-    // On vérifie d'abord la blocklist. Ces règles priment sur la logique stateful.
-    // NOTE: On utilise un port 0 pour matcher "n'importe quel port", ce qui est une
-    // simplification. Vous pourriez rendre cela plus sophistiqué.
     let stateless_key = IpPort {
         addr: source_ip_be,
         addr_dest: dest_ip_be,
-        port: 0, 
+        port: 0,
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&stateless_key) {
@@ -99,47 +94,40 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         }
     }
 
-    // --- NOUVELLE LOGIQUE STATEFUL (pour TCP) ---
-    // Pour l'instant, on se concentre sur TCP. On laisse passer les autres protocoles.
+    // --- LOGIQUE STATEFUL (pour TCP) ---
     if protocol != IpProto::Tcp {
         return Ok(xdp_action::XDP_PASS);
     }
 
-    // Parsage de l'en-tête TCP
     let transport_offset = EthHdr::LEN + (unsafe { (*ipv4_hdr).ihl() } as usize * 4);
     let tcp_hdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
     let src_port_be = unsafe { (*tcp_hdr).source };
     let dst_port_be = unsafe { (*tcp_hdr).dest };
     
-    // Extraction des drapeaux TCP importants
     let is_syn = unsafe { (*tcp_hdr).syn() } == 1;
     let is_ack = unsafe { (*tcp_hdr).ack() } == 1;
-    // let is_fin = unsafe { (*tcp_hdr).fin() } == 1;
-    // let is_rst = unsafe { (*tcp_hdr).rst() } == 1;
 
-    // NOUVEAU: Définir ce qui est "interne" vs "externe".
-    // À ADAPTER à votre réseau. Ici, on prend l'exemple de 10.0.2.0/24.
-    // Les IPs sont lues en big-endian (ordre réseau), donc on utilise des constantes
-    // en big-endian pour la comparaison.
+    // Définition du réseau interne (à adapter)
     let internal_network_prefix = u32::from_be(0x0A000200); // 10.0.2.0
     let internal_network_mask = u32::from_be(0xFFFFFF00); // Masque /24
-
     let is_from_internal = (source_ip_be & internal_network_mask) == internal_network_prefix;
 
-    // ÉTAPE 2: Gérer une nouvelle connexion SORTANTE (paquet SYN pur)
-    // Si le paquet vient de notre réseau interne, est un SYN et n'est pas un ACK,
-    // c'est une nouvelle tentative de connexion vers l'extérieur.
-    if is_syn && !is_ack && is_from_internal {
-        info!(
-            &ctx,
-            "STATEFUL: New outgoing SYN from {:i}:{} to {:i}:{}",
-            u32::from_be(source_ip_be),
-            u16::from_be(src_port_be),
-            u32::from_be(dest_ip_be),
-            u16::from_be(dst_port_be)
-        );
+    // NOUVEAU: Préparer la clé de connexion inversée.
+    // Elle est nécessaire pour rechercher dans la map les paquets de réponse (entrants).
+    // La connexion originale (sortante) a été enregistrée avec (src=interne, dst=externe).
+    // La réponse (entrante) aura (src=externe, dst=interne). Il faut donc inverser la clé pour la trouver.
+    let reverse_conn_key = ConnectionKey {
+        src_ip: dest_ip_be,
+        dst_ip: source_ip_be,
+        src_port: dst_port_be,
+        dst_port: src_port_be,
+        protocol: protocol as u8,
+        _pad: [0; 3],
+    };
 
-        // On construit la clé de connexion
+    // ÉTAPE 2: Gérer une nouvelle connexion SORTANTE (SYN)
+    if is_syn && !is_ack && is_from_internal {
+        info!(&ctx, "STATEFUL (2): New outgoing SYN from {:i}:{}", u32::from_be(source_ip_be), u16::from_be(src_port_be));
         let conn_key = ConnectionKey {
             src_ip: source_ip_be,
             dst_ip: dest_ip_be,
@@ -148,28 +136,36 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
             protocol: protocol as u8,
             _pad: [0; 3],
         };
-        
-        // On enregistre cette tentative dans notre map avec l'état "SynSent"
-        let new_value = ConnectionValue {
-            state: TcpState::SynSent as u32,
-        };
+        let new_value = ConnectionValue { state: TcpState::SynSent as u32 };
         unsafe { CONNTRAK_MAP.insert(&conn_key, &new_value, 0).map_err(|_| ())? };
-
-        // On laisse passer ce paquet pour qu'il puisse initier la connexion.
         return Ok(xdp_action::XDP_PASS);
     }
     
-    // Action par défaut pour cette étape de développement :
-    // - Bloquer le trafic entrant non sollicité pour la sécurité de base.
-    // - Laisser passer le reste du trafic sortant pour ne pas bloquer les
-    //   réponses des connexions que nous ne suivons pas encore.
+    // NOUVEAU - ÉTAPE 3: Gérer la réponse entrante (SYN-ACK)
+    // Si le paquet vient de l'extérieur, est un SYN et un ACK,
+    // c'est la réponse à notre SYN initial.
+    if is_syn && is_ack && !is_from_internal {
+        // On cherche dans la map en utilisant la clé inversée.
+        // On utilise `get_mut` car on veut modifier l'état de la connexion.
+        if let Some(existing_conn) = unsafe { CONNTRAK_MAP.get_mut(&reverse_conn_key) } {
+            // On vérifie que la connexion était bien en attente d'un SYN-ACK.
+            if existing_conn.state == TcpState::SynSent as u32 {
+                info!(&ctx, "STATEFUL (3): Matched incoming SYN-ACK. Establishing connection from {:i}:{}", u32::from_be(source_ip_be), u16::from_be(src_port_be));
+                // La poignée de main est valide, on met à jour l'état à "Established".
+                existing_conn.state = TcpState::Established as u32;
+                // On laisse passer le paquet pour que le client local le reçoive.
+                return Ok(xdp_action::XDP_PASS);
+            }
+        }
+        // Si on ne trouve pas de correspondance ou si l'état n'est pas SynSent,
+        // le paquet sera bloqué par la règle par défaut plus bas.
+    }
     
+    // Action par défaut pour cette étape
     if !is_from_internal {
-        info!(&ctx, "STATEFUL: Drop unsolicited incoming packet from {:i}", u32::from_be(source_ip_be));
+        info!(&ctx, "STATEFUL (Default): Drop unsolicited incoming packet from {:i}", u32::from_be(source_ip_be));
         return Ok(xdp_action::XDP_DROP);
     }
 
-    // On laisse passer les autres paquets sortants pour le moment.
-    // Ceci sera affiné dans les étapes suivantes.
     Ok(xdp_action::XDP_PASS)
 }

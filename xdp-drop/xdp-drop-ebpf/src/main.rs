@@ -108,7 +108,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let is_ack = unsafe { (*tcp_hdr).ack() } == 1;
 
     // Définition du réseau interne (à adapter)
-    let internal_network_prefix = u32::from_be(0x0A000200); // 10.0.2.0
+    let internal_network_prefix = u32::from_be(0xC0A80100); // 192.168.1.0
     let internal_network_mask = u32::from_be(0xFFFFFF00); // Masque /24
     let is_from_internal = (source_ip_be & internal_network_mask) == internal_network_prefix;
 

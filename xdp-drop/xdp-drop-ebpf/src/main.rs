@@ -99,8 +99,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let is_rst = unsafe { (*tcp_hdr).rst() } == 1;
 
     // Définition du réseau interne (à adapter)
-    let internal_network_prefix = u32::from_be(0xC0A80100u32); // Exemple: 192.168.1.0
-    let internal_network_mask = u32::from_be(0xFFFFFF00u32); // Masque /24
+    let internal_network_prefix = 0xC0A80100u32; // Exemple: 192.168.1.0
+    let internal_network_mask = 0xFFFFFF00u32; // Masque /24
     let is_from_internal = (source_ip_be & internal_network_mask) == internal_network_prefix;
 
     // Définition des clés de connexion (directe et inversée)

@@ -76,6 +76,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     let dest_ip_be = unsafe { (*ipv4_hdr).dst_addr };
     let protocol = unsafe { (*ipv4_hdr).proto };
 
+    info!(&ctx, "PACKET SEEN: SRC_IP={:i} -> DST_IP={:i}", u32::from_be(source_ip_be), u32::from_be(dest_ip_be));
+
     // --- LOGIQUE STATELESS (PRIORITÉ 1) ---
     let stateless_key = IpPort {
         addr: source_ip_be,

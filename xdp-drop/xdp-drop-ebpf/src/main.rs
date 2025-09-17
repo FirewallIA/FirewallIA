@@ -150,8 +150,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     
     // Bloquer tout paquet ENTRANT qui n'a pas été validé par les règles ci-dessus.
     if !is_from_internal {
-        info!(&ctx, "STATEFUL (Default): Drop unsolicited incoming packet from {:i}", u32::from_be(source_ip_be));
-         info!(&ctx, "DBG src_be=0x{:x} src_host=0x{:x} mask=0x{:x} pref=0x{:x}",
+        // info!(&ctx, "STATEFUL (Default): Drop unsolicited incoming packet from {:i}", u32::from_be(source_ip_be));
+        info!(&ctx, "DBG src_be=0x{:x} src_host=0x{:x} mask=0x{:x} pref=0x{:x}",
         source_ip_be, source_ip, INTERNAL_NETWORK_MASK, INTERNAL_NETWORK_PREFIX);
 
         return Ok(xdp_action::XDP_DROP);

@@ -105,9 +105,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     const INTERNAL_NETWORK_MASK:   u32 = 0xFFFFFF00;
     let is_from_internal = (source_ip & INTERNAL_NETWORK_MASK) == INTERNAL_NETWORK_PREFIX;
 
-    info!(&ctx, "DBG src_be=0x{:x} src_host=0x{:x} mask=0x{:x} pref=0x{:x}",
-      source_ip_be, source_ip, INTERNAL_NETWORK_MASK, INTERNAL_NETWORK_PREFIX);
-
+   
     
     // Définition des clés de connexion (directe et inversée)
     let conn_key = ConnectionKey { src_ip: source_ip_be, dst_ip: dest_ip_be, src_port: src_port_be, dst_port: dst_port_be, protocol: protocol as u8, _pad: [0; 3] };
@@ -153,6 +151,9 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     // Bloquer tout paquet ENTRANT qui n'a pas été validé par les règles ci-dessus.
     if !is_from_internal {
         info!(&ctx, "STATEFUL (Default): Drop unsolicited incoming packet from {:i}", u32::from_be(source_ip_be));
+         info!(&ctx, "DBG src_be=0x{:x} src_host=0x{:x} mask=0x{:x} pref=0x{:x}",
+        source_ip_be, source_ip, INTERNAL_NETWORK_MASK, INTERNAL_NETWORK_PREFIX);
+
         return Ok(xdp_action::XDP_DROP);
     }
     
@@ -164,5 +165,5 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     }
 
     // Cette ligne est une sécurité mais ne devrait pas être atteinte pour les paquets TCP.
-    Ok(xdp_action::XDP_PASS)
+    Ok(x        dp_action::XDP_PASS)
 }

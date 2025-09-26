@@ -26,7 +26,6 @@ tokio-postgres = "0.7"
 tonic = "0.11"
 prost = "0.12.6"
 prost-types = "0.12.6"
-aya-ebpf-ct = "0.1"
 
 
 [build-dependencies]

@@ -1,17 +1,21 @@
+# Fichier : xdp-drop-ebpf/Cargo.toml
+
 [package]
 name = "xdp-drop-ebpf"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aya-ebpf = "0.1.1"
+# ON AJOUTE LA FEATURE "conntrack" ICI
+aya-ebpf = { version = "0.1.1", features = ["conntrack"] }
 aya-log-ebpf = "0.1"
 xdp-drop-common = { path = "../xdp-drop-common" }
 network-types = "0.0.7"
 
+# ON S'ASSURE QUE LE PROGRAMME EST BIEN COMPILÉ COMME UNE LIBRAIRIE
+[lib]
+path = "src/main.rs"
+crate-type = ["staticlib"]
+
 [build-dependencies]
 which = { version = "7.0.0", default-features = false }
-
-[[bin]]
-name = "xdp-drop"
-path = "src/main.rs"

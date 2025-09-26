@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 # ON AJOUTE LA FEATURE "conntrack" ICI
-aya-ebpf = { version = "0.1.1", features = ["conntrack"] }
-aya-log-ebpf = "0.1"
+aya-ebpf = { version = "0.2", features = ["conntrack"] }
+aya-log-ebpf = "0.2"
 xdp-drop-common = { path = "../xdp-drop-common" }
 network-types = "0.0.7"
 

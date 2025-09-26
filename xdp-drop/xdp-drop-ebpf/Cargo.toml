@@ -1,18 +1,15 @@
-# Fichier : xdp-drop-ebpf/Cargo.toml
-
 [package]
 name = "xdp-drop-ebpf"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# ON AJOUTE LA FEATURE "conntrack" ICI
-aya-ebpf = {  git = "https://github.com/aya-rs/aya", features = ["conntrack"] }
-aya-log-ebpf =  {git = "https://github.com/aya-rs/aya"}
+# Utiliser la version publiée d'aya-ebpf (pas besoin du fork)
+aya-ebpf = "0.12"
+aya-log-ebpf = "0.12"
 xdp-drop-common = { path = "../xdp-drop-common" }
 network-types = "0.0.7"
 
-# ON S'ASSURE QUE LE PROGRAMME EST BIEN COMPILÉ COMME UNE LIBRAIRIE
 [lib]
 path = "src/main.rs"
 crate-type = ["staticlib"]

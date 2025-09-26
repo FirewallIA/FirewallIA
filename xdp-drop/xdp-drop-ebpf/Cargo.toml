@@ -5,14 +5,14 @@ edition = "2021"
 
 [dependencies]
 # Utiliser la version publiée d'aya-ebpf (pas besoin du fork)
-aya-ebpf = "0.12"
-aya-log-ebpf = "0.12"
+aya-ebpf = { git = "https://github.com/aya-rs/aya", package = "aya-ebpf" }
+aya-log-ebpf = { git = "https://github.com/aya-rs/aya", package = "aya-log-ebpf" }
 xdp-drop-common = { path = "../xdp-drop-common" }
 network-types = "0.0.7"
 
-[lib]
+[[bin]]
+name = "xdp-drop"
 path = "src/main.rs"
-crate-type = ["staticlib"]
 
 [build-dependencies]
 which = { version = "7.0.0", default-features = false }

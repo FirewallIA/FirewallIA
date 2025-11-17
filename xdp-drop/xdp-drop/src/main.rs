@@ -10,6 +10,7 @@ use clap::{Parser, CommandFactory};
 use flexi_logger::{Duplicate, FileSpec, Logger};
 use log::{info, warn};
 use std::sync::Arc; 
+use std::net::Ipv4Addr;
 use tokio::signal;
 use tonic::{transport::Server, Request, Response, Status};
 use xdp_drop_common::{IpPort, PROTO_ANY, PROTO_ICMP, PROTO_TCP, PROTO_UDP};
@@ -407,10 +408,18 @@ async fn main() -> Result<(), anyhow::Error> {
         let protocol: Option<String> = row.get("protocol");
         let usage_count: i32 = row.get("usage_count");
 
-        let ip_addr = source_ip.parse::<std::net::Ipv4Addr>()
-            .context(format!("IP source invalide pour la règle {id}"))?;
-        let ip_dest_addr = dest_ip.parse::<std::net::Ipv4Addr>()
-            .context(format!("IP destination invalide pour la règle {id}"))?;
+        let ip_addr = if source_ip_str.to_lowercase() == "any" {
+            Ok(Ipv4Addr::UNSPECIFIED) // Ipv4Addr::UNSPECIFIED est "0.0.0.0"
+        } else {
+            source_ip_str.parse::<Ipv4Addr>()
+        }.context(format!("IP source invalide '{}' pour la règle {}", source_ip_str, id))?;
+
+        let ip_dest_addr = if dest_ip_str.to_lowercase() == "any" {
+            Ok(Ipv4Addr::UNSPECIFIED)
+        } else {
+            dest_ip_str.parse::<Ipv4Addr>()
+        }.context(format!("IP destination invalide '{}' pour la règle {}", dest_ip_str, id))?;
+
        let port_val = (dest_port.unwrap_or(0) as u16).to_be();
        let protocol_val = protocol_to_u8(&protocol); // Convertir le protocole en u8
 

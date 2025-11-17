@@ -16,7 +16,7 @@ use network_types::{
     tcp::TcpHdr,
     udp::UdpHdr,
 };
-use xdp_drop_common:{:IpPort,PROTO_ANY, PROTO_ICMP, PROTO_TCP, PROTO_UDP}; // Import your shared struct
+use xdp_drop_common::{IpPort,PROTO_ANY, PROTO_ICMP, PROTO_TCP, PROTO_UDP}; // Import your shared struct
 
 // Panic handler (required for no_std)
 #[cfg(not(test))]

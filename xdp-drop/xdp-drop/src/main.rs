@@ -12,7 +12,7 @@ use log::{info, warn};
 use std::sync::Arc; 
 use tokio::signal;
 use tonic::{transport::Server, Request, Response, Status};
-use xdp_drop_common::IpPort;
+use xdp_drop_common::{IpPort, PROTO_ANY, PROTO_ICMP, PROTO_TCP, PROTO_UDP};
 
 // ... (modules firewall et google) ...
 pub mod firewall {
@@ -34,6 +34,21 @@ struct Opt {
     #[clap(short = 'i', long = "int")]
     iface: String,
 }
+
+// fonction utilitaire pour convertir le protocole
+fn protocol_to_u8(protocol_str: &Option<String>) -> u8 {
+    match protocol_str {
+        Some(s) => match s.to_lowercase().as_str() {
+            "tcp" => PROTO_TCP,
+            "udp" => PROTO_UDP,
+            "icmp" => PROTO_ICMP,
+            "any" | "*" | "" => PROTO_ANY,
+            _ => PROTO_ANY, // Par défaut, "any"
+        },
+        None => PROTO_ANY, // Si c'est None, c'est "any"
+    }
+}
+
 
 fn validate_args(opt: &Opt) {
     if opt.iface.trim().is_empty() {
@@ -397,11 +412,13 @@ async fn main() -> Result<(), anyhow::Error> {
         let ip_dest_addr = dest_ip.parse::<std::net::Ipv4Addr>()
             .context(format!("IP destination invalide pour la règle {id}"))?;
        let port_val = (dest_port.unwrap_or(0) as u16).to_be();
+       let protocol_val = protocol_to_u8(&protocol); // Convertir le protocole en u8
 
         let key = IpPort {
             addr: u32::from(ip_addr).to_be(),
             addr_dest: u32::from(ip_dest_addr).to_be(),
             port: port_val,
+            protocol: protocol_val,
             _pad: 0,
         };
 

@@ -33,7 +33,7 @@ pub struct IpPort {
     /// Numéro de port, généralement stocké en network byte order (big-endian).
     pub port: u16,
      pub protocol: u8,    // Protocole IP (ICMP=1, TCP=6, UDP=17, ANY=0)
-    pub _pad: u16,
+    pub _pad: u8,
     // Deux octets de padding seront probablement insérés ici par le compilateur
     // à cause de #[repr(C)] pour aligner la structure sur 4 octets (alignement de addr).
     // Taille totale : 4 (addr) + 2 (port) + 2 (padding) = 8 octets.

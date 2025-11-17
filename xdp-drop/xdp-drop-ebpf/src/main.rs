@@ -96,8 +96,9 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         u16::from_be(dest_port_be),
         protocol as u8
     );
+
     // 4. Construct the key for the firewall map lookup
-    let rule_key = IpPort {
+    let key = IpPort {
         addr: source_ip_be,    // Source IP (already network byte order)
         addr_dest: dest_ip_be, // Destination IP (already network byte order)
         port: dest_port_be,    // Destination Port (already network byte order)

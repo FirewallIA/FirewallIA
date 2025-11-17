@@ -16,6 +16,10 @@ unsafe impl aya::Pod for PacketLog {}
 
 
 // --- Nouvelle structure IpPort ---
+pub const PROTO_ANY: u8 = 0;
+pub const PROTO_ICMP: u8 = 1;
+pub const PROTO_TCP: u8 = 6;
+pub const PROTO_UDP: u8 = 17;
 
 /// Représente une combinaison d'adresse IPv4 et de port.
 /// Conçue pour être partagée entre l'espace utilisateur et les programmes eBPF.
@@ -28,6 +32,7 @@ pub struct IpPort {
     pub addr_dest : u32,
     /// Numéro de port, généralement stocké en network byte order (big-endian).
     pub port: u16,
+     pub protocol: u8,    // Protocole IP (ICMP=1, TCP=6, UDP=17, ANY=0)
     pub _pad: u16,
     // Deux octets de padding seront probablement insérés ici par le compilateur
     // à cause de #[repr(C)] pour aligner la structure sur 4 octets (alignement de addr).

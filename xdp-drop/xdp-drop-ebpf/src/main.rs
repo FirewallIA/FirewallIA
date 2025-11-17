@@ -16,7 +16,7 @@ use network_types::{
     tcp::TcpHdr,
     udp::UdpHdr,
 };
-use xdp_drop_common::IpPort; // Import your shared struct
+use xdp_drop_common:{:IpPort,PROTO_ANY, PROTO_ICMP, PROTO_TCP, PROTO_UDP}; // Import your shared struct
 
 // Panic handler (required for no_std)
 #[cfg(not(test))]
@@ -68,16 +68,8 @@ fn check_firewall_rule(key: &IpPort) -> Option<u32> {
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     // 1. Parse Ethernet Header
     let eth_hdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
-    // let src_mac = unsafe { (*eth_hdr).src_addr }; // Example: if you need MACs
-    // let dst_mac = unsafe { (*eth_hdr).dst_addr };
-
-    // Check if it's an IPv4 packet, pass others
-    match unsafe { (*eth_hdr).ether_type } {
-        EtherType::Ipv4 => {} // Continue processing
-        _ => {
-            // info!(&ctx, "Passing non-IPv4 packet");
-            return Ok(xdp_action::XDP_PASS);
-        }
+    if unsafe { (*eth_hdr).ether_type } != EtherType::Ipv4 {
+        return Ok(xdp_action::XDP_PASS);
     }
 
     // 2. Parse IPv4 Header
@@ -92,21 +84,10 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
 
     // 3. Parse Transport Header (TCP/UDP to get destination port)
     // We are primarily interested in the destination port for firewall rules.
-    let dest_port_be: u16 = match protocol {
-        IpProto::Tcp => {
-            let tcp_hdr: *const TcpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
-            unsafe { (*tcp_hdr).dest } // Big-endian (network order)
-        }
-        IpProto::Udp => {
-            let udp_hdr: *const UdpHdr = unsafe { ptr_at(&ctx, transport_offset)? };
-            unsafe { (*udp_hdr).dest } // Big-endian (network order)
-        }
-        _ => {
-            // For ICMP or other protocols, we might not have a port, or we can use 0.
-            // For simplicity, if it's not TCP/UDP, we'll treat dest_port as 0.
-            // A rule with port 0 could then act as a wildcard for "any port" for that protocol.
-            0 // Represent "any" or "no port"
-        }
+     let dest_port_be: u16 = match protocol {
+        IpProto::Tcp => unsafe { (*ptr_at::<TcpHdr>(&ctx, transport_offset)?).dest },
+        IpProto::Udp => unsafe { (*ptr_at::<UdpHdr>(&ctx, transport_offset)?).dest },
+        _ => 0, // Pour ICMP et autres, le port est 0
     };
 
     // 4. Construct the key for the firewall map lookup
@@ -114,54 +95,36 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         addr: source_ip_be,    // Source IP (already network byte order)
         addr_dest: dest_ip_be, // Destination IP (already network byte order)
         port: dest_port_be,    // Destination Port (already network byte order)
+        protocol: protocol as u8,
         _pad: 0,               // Padding
     };
 
-    // 5. Perform Firewall Logic: Check the map
-    let final_action = match check_firewall_rule(&rule_key) {
-        Some(action_value_from_map) => {
-            // A rule was found in the map
-            if action_value_from_map == ACTION_DENY_FROM_MAP {
-                info!(
-                    &ctx,
-                    "DENY rule match: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}",
-                    u32::from_be(source_ip_be), // Log in host byte order for readability
-                    u32::from_be(dest_ip_be),   // Log in host byte order
-                    u16::from_be(dest_port_be), // Log in host byte order
-                    protocol as u8
-                );
-                xdp_action::XDP_DROP
-            } else if action_value_from_map == ACTION_ALLOW_FROM_MAP {
-                info!(
-                    &ctx,
-                    "ALLOW rule match: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}",
-                    u32::from_be(source_ip_be),
-                    u32::from_be(dest_ip_be),
-                    u16::from_be(dest_port_be),
-                    protocol as u8
-                );
-                xdp_action::XDP_PASS
-            } else {
-                // Unknown action value from map, default to pass (or your chosen default)
-                info!(
-                    &ctx,
-                    "WARN: Unknown action {} from map for S_IP={:i}, D_IP={:i}, D_PORT={}. Passing.",
-                    action_value_from_map,
-                    u32::from_be(source_ip_be),
-                    u32::from_be(dest_ip_be),
-                    u16::from_be(dest_port_be)
-                );
-                xdp_action::XDP_PASS
-            }
+    // 5. Logique du pare-feu en 2 temps
+    //    a) Chercher une règle spécifique (ex: bloquer ICMP)
+    if let Some(action) = check_firewall_rule(&rule_key) {
+        if action == ACTION_DENY_FROM_MAP {
+            info!(&ctx, "DENY from specific rule: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}", u32::from_be(source_ip_be), u32::from_be(dest_ip_be), u16::from_be(dest_port_be), rule_key.protocol);
+            return Ok(xdp_action::XDP_DROP);
+        } else {
+            info!(&ctx, "ALLOW from specific rule: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}", u32::from_be(source_ip_be), u32::from_be(dest_ip_be), u16::from_be(dest_port_be), rule_key.protocol);
+            return Ok(xdp_action::XDP_PASS);
         }
-        None => {
-            // No specific rule found in the map. Default action is PASS.
-            // You could log this if needed for debugging, but it can be very verbose.
-            info!(&ctx, "No rule match for S_IP={:i}, D_IP={:i}, D_PORT={}. Passing by default.",
-                 u32::from_be(source_ip_be), u32::from_be(dest_ip_be), u16::from_be(dest_port_be));
-            xdp_action::XDP_PASS
-        }
-    };
+    }
 
-    Ok(final_action)
+    //    b) Si aucune règle spécifique n'est trouvée, chercher une règle "ANY" protocol.
+    //       On modifie juste le champ protocole de notre clé et on cherche à nouveau.
+    rule_key.protocol = PROTO_ANY; // PROTO_ANY = 0
+    if let Some(action) = check_firewall_rule(&rule_key) {
+        if action == ACTION_DENY_FROM_MAP {
+            info!(&ctx, "DENY from ANY protocol rule: S_IP={:i}, D_IP={:i}, D_PORT={}", u32::from_be(source_ip_be), u32::from_be(dest_ip_be), u16::from_be(dest_port_be));
+            return Ok(xdp_action::XDP_DROP);
+        } else {
+             info!(&ctx, "ALLOW from ANY protocol rule: S_IP={:i}, D_IP={:i}, D_PORT={}", u32::from_be(source_ip_be), u32::from_be(dest_ip_be), u16::from_be(dest_port_be));
+            return Ok(xdp_action::XDP_PASS);
+        }
+    }
+    
+    // Si aucune règle (spécifique ou ANY) n'est trouvée, on passe par défaut.
+    // info!(&ctx, "No rule match for S_IP={:i}, D_IP={:i}. Passing by default.", u32::from_be(source_ip_be), u32::from_be(dest_ip_be));
+    Ok(xdp_action::XDP_PASS)
 }

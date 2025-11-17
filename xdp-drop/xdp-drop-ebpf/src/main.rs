@@ -67,103 +67,19 @@ fn check_firewall_rule(key: &IpPort) -> Option<u32> {
 
 // Main XDP processing logic
 fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
-    // 1. Parse Ethernet Header
+    // 1. On parse juste assez pour avoir les informations de base
     let eth_hdr: *const EthHdr = unsafe { ptr_at(&ctx, 0)? };
     if unsafe { (*eth_hdr).ether_type } != EtherType::Ipv4 {
         return Ok(xdp_action::XDP_PASS);
     }
-
-    // 2. Parse IPv4 Header
     let ipv4_hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
-    let source_ip_be = unsafe { (*ipv4_hdr).src_addr }; // Big-endian (network order)
-    let dest_ip_be = unsafe { (*ipv4_hdr).dst_addr };   // Big-endian (network order)
+    let source_ip_be = unsafe { (*ipv4_hdr).src_addr };
+    let dest_ip_be = unsafe { (*ipv4_hdr).dst_addr };
     let protocol = unsafe { (*ipv4_hdr).proto };
 
-    // Calculate offset to the transport layer header
-    // IHL (Internet Header Length) is in 32-bit words, so multiply by 4 for bytes.
-    let transport_offset = EthHdr::LEN + (unsafe { (*ipv4_hdr).ihl() } as usize * 4);
+    // 2. On logne UNE SEULE FOIS pour prouver que le programme s'exécute
+    info!(&ctx, "[TEST] Paquet vu: Proto={}", protocol as u8);
 
-    // 3. Parse Transport Header (TCP/UDP to get destination port)
-    // We are primarily interested in the destination port for firewall rules.
-     let dest_port_be: u16 = match protocol {
-        IpProto::Tcp => unsafe { (*ptr_at::<TcpHdr>(&ctx, transport_offset)?).dest },
-        IpProto::Udp => unsafe { (*ptr_at::<UdpHdr>(&ctx, transport_offset)?).dest },
-        _ => 0, // Pour ICMP et autres, le port est 0
-    };
-    info!(&ctx, "[DEBUG eBPF] Paquet reçu: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}",
-        u32::from_be(source_ip_be),
-        u32::from_be(dest_ip_be),
-        u16::from_be(dest_port_be),
-        protocol as u8
-    );
-
-    // 4. Construct the key for the firewall map lookup
-    let key = IpPort {
-        addr: source_ip_be,    // Source IP (already network byte order)
-        addr_dest: dest_ip_be, // Destination IP (already network byte order)
-        port: dest_port_be,    // Destination Port (already network byte order)
-        protocol: protocol as u8,
-        _pad: 0,               // Padding
-    };
-
-    // 5. Logique du pare-feu en 2 temps
-     if let Some(action) = check_firewall_rule(&key) {
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-    
-    // 5.2: (Spécifique, Any)
-    key.addr_dest = IP_ANY_BE;
-    if let Some(action) = check_firewall_rule(&key) {
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-    
-    // 5.3: (Any, Spécifique)
-    key.addr = IP_ANY_BE;
-    key.addr_dest = dest_ip_be; // Remettre l'IP de destination originale
-    if let Some(action) = check_firewall_rule(&key) {
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    // 5.4: (Any, Any)
-    key.addr_dest = IP_ANY_BE;
-    if let Some(action) = check_firewall_rule(&key) {
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    // 6. Si aucune règle spécifique au protocole n'est trouvée,
-    // on recommence la même séquence avec le protocole "ANY" (0).
-    key.protocol = PROTO_ANY;
-    key.addr = source_ip_be;      // Réinitialiser à l'IP source originale
-    key.addr_dest = dest_ip_be; // Réinitialiser à l'IP dest originale
-    
-    // 6.1: (Spécifique, Spécifique) - Proto ANY
-    if let Some(action) = check_firewall_rule(&key) {
-        info!(&ctx, "MATCH (ANY Proto): {:i} -> {:i}", u32::from_be(key.addr), u32::from_be(key.addr_dest));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    // 6.2: (Spécifique, Any) - Proto ANY
-    key.addr_dest = IP_ANY_BE;
-    if let Some(action) = check_firewall_rule(&key) {
-        info!(&ctx, "MATCH (ANY Proto, ANY Dest): {:i} -> {:i}", u32::from_be(key.addr), u32::from_be(key.addr_dest));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    // 6.3: (Any, Spécifique) - Proto ANY
-    key.addr = IP_ANY_BE;
-    key.addr_dest = dest_ip_be;
-    if let Some(action) = check_firewall_rule(&key) {
-        info!(&ctx, "MATCH (ANY Proto, ANY Source): {:i} -> {:i}", u32::from_be(key.addr), u32::from_be(key.addr_dest));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-    
-    // 6.4: (Any, Any) - Proto ANY
-    key.addr_dest = IP_ANY_BE;
-    if let Some(action) = check_firewall_rule(&key) {
-        info!(&ctx, "MATCH (ANY Proto, ANY Source, ANY Dest): {:i} -> {:i}", u32::from_be(key.addr), u32::from_be(key.addr_dest));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    // Si aucune règle ne correspond après toutes ces vérifications, on passe.
+    // 3. On ne fait AUCUNE recherche et on laisse tout passer
     Ok(xdp_action::XDP_PASS)
 }

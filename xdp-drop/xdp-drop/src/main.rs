@@ -445,7 +445,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 continue;
             }
         };
-
+        println!("[DEBUG main.rs] Insertion de la clé pour règle #{}: {:?}", id, key);
         blocklist.insert(key, action_value, 0)
             .context(format!("Erreur lors de l'insertion de la règle #{id} dans BPF"))?;
 

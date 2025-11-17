@@ -408,17 +408,23 @@ async fn main() -> Result<(), anyhow::Error> {
         let protocol: Option<String> = row.get("protocol");
         let usage_count: i32 = row.get("usage_count");
 
-        let ip_addr = if source_ip_str.to_lowercase() == "any" {
-            Ok(Ipv4Addr::UNSPECIFIED) // Ipv4Addr::UNSPECIFIED est "0.0.0.0"
+        let ip_addr = if source_ip.to_lowercase() == "any" {
+        Ok(Ipv4Addr::UNSPECIFIED) // Ipv4Addr::UNSPECIFIED est "0.0.0.0"
         } else {
-            source_ip_str.parse::<Ipv4Addr>()
-        }.context(format!("IP source invalide '{}' pour la règle {}", source_ip_str, id))?;
+            // On utilise `source_ip` directement
+            source_ip.parse::<Ipv4Addr>()
+        // On utilise `source_ip` directement
+        }.context(format!("IP source invalide '{}' pour la règle {}", source_ip, id))?;
 
-        let ip_dest_addr = if dest_ip_str.to_lowercase() == "any" {
+        // On utilise `dest_ip` directement
+        let ip_dest_addr = if dest_ip.to_lowercase() == "any" {
             Ok(Ipv4Addr::UNSPECIFIED)
         } else {
-            dest_ip_str.parse::<Ipv4Addr>()
-        }.context(format!("IP destination invalide '{}' pour la règle {}", dest_ip_str, id))?;
+            // On utilise `dest_ip` directement
+            dest_ip.parse::<Ipv4Addr>()
+        // On utilise `dest_ip` directement
+        }.context(format!("IP destination invalide '{}' pour la règle {}", dest_ip, id))?;
+
 
        let port_val = (dest_port.unwrap_or(0) as u16).to_be();
        let protocol_val = protocol_to_u8(&protocol); // Convertir le protocole en u8

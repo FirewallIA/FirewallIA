@@ -90,7 +90,12 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         IpProto::Udp => unsafe { (*ptr_at::<UdpHdr>(&ctx, transport_offset)?).dest },
         _ => 0, // Pour ICMP et autres, le port est 0
     };
-
+    info!(&ctx, "[DEBUG eBPF] Paquet reçu: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}",
+        u32::from_be(source_ip_be),
+        u32::from_be(dest_ip_be),
+        u16::from_be(dest_port_be),
+        protocol as u8
+    );
     // 4. Construct the key for the firewall map lookup
     let rule_key = IpPort {
         addr: source_ip_be,    // Source IP (already network byte order)

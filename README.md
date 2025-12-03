@@ -1,4 +1,4 @@
-#📘 Guide d'installation -- FirewallIA sur Debian 
+# 📘 Guide d'installation -- FirewallIA sur Debian 
 
 1. Pré-requis Installer
 une Debian classique (version stable recommandée).

@@ -124,12 +124,14 @@ impl FirewallService for MyFirewallService {
         }
     }
     
-    async fn create_rule(
+     async fn create_rule(
         &self,
         request: Request<CreateRuleRequest>,
     ) -> Result<Response<CreateRuleResponse>, tonic::Status> {
         let req_data = request.into_inner();
         let rule_to_create = req_data.rule.ok_or_else(|| tonic::Status::invalid_argument("Données de règle manquantes"))?;
+        
+        // --- 1. Validation des entrées ---
         if rule_to_create.source_ip.is_empty() || rule_to_create.dest_ip.is_empty() {
             return Err(tonic::Status::invalid_argument("Les adresses IP source et destination ne peuvent pas être vides."));
         }
@@ -137,10 +139,13 @@ impl FirewallService for MyFirewallService {
         if action_str != "allow" && action_str != "deny" {
             return Err(tonic::Status::invalid_argument("Action invalide. Doit être 'allow' ou 'deny'."));
         }
+        
+        // Parsing des ports pour la DB (i32) et pour BPF (u16)
         let source_port_db: Option<i32> = rule_to_create.source_port.parse().ok();
         let dest_port_db: Option<i32> = rule_to_create.dest_port.parse().ok();
+        let dest_port_u16 = dest_port_db.unwrap_or(0) as u16;
 
-        // Insertion DB
+        // --- 2. Insertion dans la Base de Données ---
         let created_rule_id: i32 = self.db_client.query_one(
             "INSERT INTO rules (source_ip, dest_ip, source_port, dest_port, action, protocol) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             &[&rule_to_create.source_ip, &rule_to_create.dest_ip, &source_port_db, &dest_port_db, &action_str, &rule_to_create.protocol.to_uppercase()],
@@ -148,8 +153,10 @@ impl FirewallService for MyFirewallService {
             log::error!("Erreur insertion DB: {}", e);
             tonic::Status::internal(format!("Échec création règle DB: {}", e))
         })?.get(0);
+
+        // --- 3. MISE A JOUR A CHAUD DU BPF (C'est ce qui manquait !) ---
         
-         // a. Parsing des IPs (gestion de "any")
+        // a. Parsing des IPs (gestion de "any")
         let ip_src = if rule_to_create.source_ip.to_lowercase() == "any" { 
             Ipv4Addr::UNSPECIFIED 
         } else { 
@@ -185,7 +192,6 @@ impl FirewallService for MyFirewallService {
             }
         }
 
-        // --- AJOUT LOG CREATION ---
         info!(
             "✅ Règle créée [ID: {}] : {} -> {} | Port Dest: {} | Proto: {} | Action: {}",
             created_rule_id,
@@ -201,7 +207,7 @@ impl FirewallService for MyFirewallService {
             message: format!("Règle créée avec succès avec l'ID {}.", created_rule_id),
         }))
     }
-
+    
     async fn delete_rule(
         &self,
         request: Request<DeleteRuleRequest>,

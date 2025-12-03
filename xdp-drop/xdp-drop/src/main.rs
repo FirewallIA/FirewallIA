@@ -60,7 +60,9 @@ fn validate_args(opt: &Opt) {
 
 pub struct MyFirewallService {
     db_client: Arc<tokio_postgres::Client>,
-    blocklist: Arc<tokio::sync::Mutex<HashMap<&'static mut aya::maps::MapData, IpPort, u32>>>,
+    // CORRECTION 1: On retire le lifetime et la référence &mut.
+    // On stocke MapData directement (owned) pour pouvoir le passer dans l'Arc sans problèmes de lifetime.
+    blocklist: Arc<tokio::sync::Mutex<HashMap<aya::maps::MapData, IpPort, u32>>>,
 }
 
 async fn fetch_and_format_rules_from_db(
@@ -217,8 +219,17 @@ async fn main() -> Result<(), anyhow::Error> {
     program.attach(&opt.iface, XdpFlags::default())?;
     info!("eBPF program loaded and attached to {}.", opt.iface);
 
+    // CORRECTION 2 & 3:
+    // - On utilise `take_map` pour prendre la possession (ownership) de la map hors de `bpf`.
+    // - On utilise `.ok_or(...)?` pour convertir l'Option en Result.
+    // - On utilise `HashMap::try_from` sur la map propriétaire (owned).
+    let map = bpf.take_map("BLOCKLIST")
+        .ok_or_else(|| anyhow::anyhow!("Map BLOCKLIST introuvable"))?;
+    
+    let blocklist_map: HashMap<aya::maps::MapData, IpPort, u32> = HashMap::try_from(map)?;
+
     let blocklist: Arc<tokio::sync::Mutex<HashMap<aya::maps::MapData, IpPort, u32>>> =
-        Arc::new(tokio::sync::Mutex::new(HashMap::try_from(bpf.map_mut("BLOCKLIST")?)?));
+        Arc::new(tokio::sync::Mutex::new(blocklist_map));
 
     let (pg_client_raw, connection) = tokio_postgres::connect("host=localhost user=postgres password=postgres dbname=firewall", tokio_postgres::NoTls).await?;
     let pg_client = Arc::new(pg_client_raw);
@@ -247,6 +258,8 @@ async fn main() -> Result<(), anyhow::Error> {
             _pad: 0,
         };
         let action_value = match action.to_lowercase().as_str() { "deny" => ACTION_DENY, "allow" => ACTION_ALLOW, _ => continue };
+        
+        // CORRECTION: Utilisation de la map partagée correctement typée
         blocklist.lock().await.insert(key, action_value, 0)?;
     }
 

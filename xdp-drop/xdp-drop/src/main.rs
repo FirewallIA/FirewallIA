@@ -63,6 +63,7 @@ fn validate_args(opt: &Opt) {
 //  RUST_LOG=info cargo run -- -i enp0s1
 pub struct MyFirewallService {
     db_client: Arc<tokio_postgres::Client>,
+    blocklist: Arc<tokio::sync::Mutex<HashMap<'static, IpPort, u32>>>,
 }
 
 // Fonction pour récupérer et formater les règles
@@ -281,7 +282,34 @@ impl FirewallService for MyFirewallService {
         };
 
         // 2. Tentative de suppression de la map eBPF
+        {
+        let (source_ip, dest_ip, dest_port) = &rule_details;
 
+        if let (Ok(ip_src), Ok(ip_dst)) = (
+            source_ip.parse::<std::net::Ipv4Addr>(),
+            dest_ip.parse::<std::net::Ipv4Addr>(),
+        ) {
+            let key = IpPort {
+                addr: u32::from(ip_src).to_be(),
+                addr_dest: u32::from(ip_dst).to_be(),
+                port: (dest_port.unwrap_or(0) as u16).to_be(),
+                protocol: PROTO_ANY, // tu peux changer si ton système utilise celui de la DB
+                _pad: 0,
+            };
+
+            let mut map = self.blocklist.lock().await;
+
+            match map.remove(&key) {
+                Ok(_) => info!("Règle supprimée à chaud du BPF: {:?}", key),
+                Err(e) => warn!("Impossible de retirer la règle du BPF (peut-être déjà absente) : {}", e),
+            }
+        } else {
+            warn!(
+                "IP invalides dans la règle ID {}, impossible de supprimer du BPF",
+                rule_id_to_delete
+            );
+        }
+        }
         // 3. Suppression de la base de données PostgreSQL
         match self.db_client.execute(
             "DELETE FROM rules WHERE id = $1",
@@ -359,9 +387,13 @@ async fn main() -> Result<(), anyhow::Error> {
 
 
     // Blocage d'IP
-    let mut blocklist: HashMap<_, IpPort, u32> =
-        HashMap::try_from(bpf.map_mut("BLOCKLIST")
-        .context("Map BLOCKLIST introuvable dans eBPF")?)?;
+    let blocklist: Arc<tokio::sync::Mutex<HashMap<_, IpPort, u32>>> =
+    Arc::new(tokio::sync::Mutex::new(
+        HashMap::try_from(
+            bpf.map_mut("BLOCKLIST")
+                .context("Map BLOCKLIST introuvable dans eBPF")?
+        )?
+    ));
 
 
     // Connexion PostgreSQL
@@ -461,7 +493,8 @@ async fn main() -> Result<(), anyhow::Error> {
     let grpc_addr = "[::1]:50051".parse().context("Adresse gRPC invalide")?;
 
     let firewall_service = MyFirewallService {
-        db_client: Arc::clone(&pg_client) 
+        db_client: Arc::clone(&pg_client),
+        blocklist: Arc::clone(&blocklist), 
     };
     info!("Service Firewall gRPC en cours de création...");
 

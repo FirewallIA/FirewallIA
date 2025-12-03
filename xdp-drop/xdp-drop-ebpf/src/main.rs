@@ -75,29 +75,28 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
 
     // 2. Parse IPv4 Header
     let ipv4_hdr: *const Ipv4Hdr = unsafe { ptr_at(&ctx, EthHdr::LEN)? };
-    let source_ip_be = unsafe { (*ipv4_hdr).src_addr }; // Big-endian (network order)
-    let dest_ip_be = unsafe { (*ipv4_hdr).dst_addr };   // Big-endian (network order)
+    let source_ip_be = unsafe { (*ipv4_hdr).src_addr };
+    let dest_ip_be = unsafe { (*ipv4_hdr).dst_addr };
     let protocol = unsafe { (*ipv4_hdr).proto };
 
-    // Calculate offset to the transport layer header
-    // IHL (Internet Header Length) is in 32-bit words, so multiply by 4 for bytes.
     let transport_offset = EthHdr::LEN + (unsafe { (*ipv4_hdr).ihl() } as usize * 4);
 
-    // 3. Parse Transport Header (TCP/UDP to get destination port)
-    // We are primarily interested in the destination port for firewall rules.
-     let dest_port_be: u16 = match protocol {
-        IpProto::Tcp => unsafe { (*ptr_at::<TcpHdr>(&ctx, transport_offset)?).dest },
-        IpProto::Udp => unsafe { (*ptr_at::<UdpHdr>(&ctx, transport_offset)?).dest },
-        _ => 0, // Pour ICMP et autres, le port est 0
+    // 3. Parse Transport Header & Extract Ports
+    let (source_port_be, dest_port_be) = match protocol {
+        IpProto::Tcp => unsafe { 
+            let hdr = ptr_at::<TcpHdr>(&ctx, transport_offset)?;
+            ((*hdr).source, (*hdr).dest)
+        },
+        IpProto::Udp => unsafe { 
+            let hdr = ptr_at::<UdpHdr>(&ctx, transport_offset)?;
+            ((*hdr).source, (*hdr).dest)
+        },
+        _ => (0, 0),
     };
-    info!(&ctx, "[DEBUG eBPF] Paquet reçu: S_IP={:i}, D_IP={:i}, D_PORT={}, Proto={}",
-        u32::from_be(source_ip_be),
-        u32::from_be(dest_ip_be),
-        u16::from_be(dest_port_be),
-        protocol as u8
-    );
 
-     // (exact src, exact dest) - port exact
+    // --- LOGIQUE DE FILTRAGE ---
+
+    // 1. (exact src, exact dest) - port exact
     let key_exact = IpPort {
         addr: source_ip_be,
         addr_dest: dest_ip_be,
@@ -106,15 +105,10 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_exact) {
-        return Ok(if action == ACTION_DENY_FROM_MAP {
-            xdp_action::XDP_DROP
-        } else {
-            xdp_action::XDP_PASS
-        });
+        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
     }
 
-    // (exact src, exact dest) - port ANY (0)
-    // 2. (exact src, exact dest) - port ANY (0)
+    // 2. (exact src, exact dest) - port ANY
     let key_exact_port_any = IpPort {
         addr: source_ip_be,
         addr_dest: dest_ip_be,
@@ -123,7 +117,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_exact_port_any) {
-        info!(&ctx, "MATCH IP exact / Port ANY: {:i} -> {:i}", u32::from_be(source_ip_be), u32::from_be(dest_ip_be));
+        info!(&ctx, "MATCH IP exact / Port ANY");
         return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
     }
 
@@ -136,7 +130,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_src_anydest) {
-        info!(&ctx, "MATCH Src exact / Dest ANY / Port exact: {:i} -> ANY", u32::from_be(source_ip_be));
+        info!(&ctx, "MATCH Src exact / Dest ANY / Port exact");
         return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
     }
 
@@ -149,7 +143,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_src_anydest_port_any) {
-        info!(&ctx, "MATCH Src exact / Dest ANY / Port ANY: {:i} -> ANY", u32::from_be(source_ip_be));
+        info!(&ctx, "MATCH Src exact / Dest ANY / Port ANY");
         return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
     }
 
@@ -162,9 +156,29 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_anysrc_dest) {
-        info!(&ctx, "MATCH Src ANY / Dest exact / Port exact: ANY -> {:i}", u32::from_be(dest_ip_be));
+        info!(&ctx, "MATCH Src ANY / Dest exact / Port exact");
         return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
     }
+    
+    // On regarde si le PORT SOURCE est autorisé dans la map (via une règle Any->Any Port X Allow)
+    let key_check_source_port = IpPort {
+        addr: IP_ANY_BE,
+        addr_dest: IP_ANY_BE,
+        port: source_port_be, // On utilise le port SOURCE
+        protocol: protocol as u8,
+        _pad: 0,
+    };
+
+    if let Some(action) = check_firewall_rule(&key_check_source_port) {
+        // IMPORTANT : On n'accepte le retour QUE si l'action est ALLOW.
+        // Si c'est DENY, on laisse couler vers les règles suivantes (ou on bloque direct).
+        if action == ACTION_ALLOW_FROM_MAP {
+             info!(&ctx, "✅ TRAFIC RETOUR AUTORISÉ (Port Source: {})", u16::from_be(source_port_be));
+             return Ok(xdp_action::XDP_PASS);
+        }
+    }
+    // =========================================================================
+
 
     // 6. (ANY src, dest) - port ANY
     let key_anysrc_dest_port_any = IpPort {
@@ -175,7 +189,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_anysrc_dest_port_any) {
-        info!(&ctx, "MATCH Src ANY / Dest exact / Port ANY: ANY -> {:i}", u32::from_be(dest_ip_be));
+        info!(&ctx, "MATCH Src ANY / Dest exact / Port ANY");
         return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
     }
 
@@ -192,7 +206,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
     }
 
-    // 8. (ANY src, ANY dest) - port ANY
+    // 8. (ANY src, ANY dest) - port ANY (Proto exact)
     let key_any_any_port_any = IpPort {
         addr: IP_ANY_BE,
         addr_dest: IP_ANY_BE,
@@ -206,92 +220,11 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     }
 
     // ---------- Protocol = ANY checks (PROTO_ANY) ----------
-    // (C'est ici que tu avais mis tes logs, mais le code n'arrivait jamais ici si une règle au-dessus matchait)
+    
+    // ... Tes autres checks PROTO_ANY ...
 
-    let key_exact_anyproto = IpPort {
-        addr: source_ip_be,
-        addr_dest: dest_ip_be,
-        port: dest_port_be,
-        protocol: PROTO_ANY,
-        _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_exact_anyproto) {
-        info!(&ctx, "MATCH (PROTO_ANY): {:i} -> {:i}", u32::from_be(source_ip_be), u32::from_be(dest_ip_be));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    let key_exact_anyproto_port_any = IpPort {
-        addr: source_ip_be,
-        addr_dest: dest_ip_be,
-        port: 0,
-        protocol: PROTO_ANY,
-        _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_exact_anyproto_port_any) {
-        info!(&ctx, "MATCH (PROTO_ANY, port ANY): {:i} -> {:i}", u32::from_be(source_ip_be), u32::from_be(dest_ip_be));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    let key_src_anydest_anyproto = IpPort {
-        addr: source_ip_be,
-        addr_dest: IP_ANY_BE,
-        port: dest_port_be,
-        protocol: PROTO_ANY,
-        _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_src_anydest_anyproto) {
-        info!(&ctx, "MATCH (PROTO_ANY, dest ANY): {:i} -> ANY", u32::from_be(source_ip_be));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    let key_src_anydest_anyproto_port_any = IpPort {
-        addr: source_ip_be,
-        addr_dest: IP_ANY_BE,
-        port: 0,
-        protocol: PROTO_ANY,
-        _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_src_anydest_anyproto_port_any) {
-        info!(&ctx, "MATCH (PROTO_ANY, dest ANY, port ANY): {:i} -> ANY", u32::from_be(source_ip_be));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    let key_anysrc_dest_anyproto = IpPort {
-        addr: IP_ANY_BE,
-        addr_dest: dest_ip_be,
-        port: dest_port_be,
-        protocol: PROTO_ANY,
-        _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_anysrc_dest_anyproto) {
-        info!(&ctx, "MATCH (PROTO_ANY, src ANY): ANY -> {:i}", u32::from_be(dest_ip_be));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    let key_anysrc_dest_anyproto_port_any = IpPort {
-        addr: IP_ANY_BE,
-        addr_dest: dest_ip_be,
-        port: 0,
-        protocol: PROTO_ANY,
-        _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_anysrc_dest_anyproto_port_any) {
-        info!(&ctx, "MATCH (PROTO_ANY, src ANY, port ANY): ANY -> {:i}", u32::from_be(dest_ip_be));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
-    let key_any_any_anyproto = IpPort {
-        addr: IP_ANY_BE,
-        addr_dest: IP_ANY_BE,
-        port: dest_port_be,
-        protocol: PROTO_ANY,
-        _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_any_any_anyproto) {
-        info!(&ctx, "MATCH (PROTO_ANY, src ANY, dest ANY) Port: {}", u16::from_be(dest_port_be));
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
-    }
-
+    // (ANY src, ANY dest) - port ANY - proto ANY
+    // C'EST CETTE RÈGLE QUI BLOQUAIT TOUT (ID 20)
     let key_any_any_anyproto_port_any = IpPort {
         addr: IP_ANY_BE,
         addr_dest: IP_ANY_BE,
@@ -299,30 +232,11 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         protocol: PROTO_ANY,
         _pad: 0,
     };
-
-    let source_port = match protocol {
-        IpProto::Tcp => unsafe { (*ptr_at::<TcpHdr>(&ctx, transport_offset)?).source },
-        IpProto::Udp => unsafe { (*ptr_at::<UdpHdr>(&ctx, transport_offset)?).source },
-        _ => 0,
-    };
-
-    // On cherche une règle : (ANY Src, ANY Dest) - PORT SOURCE EXACT
-    // Cela signifie : "Est-ce qu'on autorise le trafic venant de ce port ?"
-    let key_check_source_port = IpPort {
-        addr: IP_ANY_BE,      // On s'en fiche de l'IP pour ce check rapide
-        addr_dest: IP_ANY_BE,
-        port: source_port,     // <--- ON UTILISE LE PORT SOURCE ICI
-        protocol: protocol as u8,
-        _pad: 0,
-    };
-
-    if let Some(action) = check_firewall_rule(&key_check_source_port) {
-        // Si on trouve une règle ALLOW pour ce port (ex: 10022), on laisse passer le retour !
-        if *action == ACTION_ALLOW_FROM_MAP {
-             info!(&ctx, "✅ RETOUR AUTORISÉ via Port Source: {}", u16::from_be(source_port));
-             return Ok(xdp_action::XDP_PASS);
-        }
+    if let Some(action) = check_firewall_rule(&key_any_any_anyproto_port_any) {
+        info!(&ctx, "MATCH (PROTO_ANY, all ANY) - BLOCK ALL");
+        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
     }
-    // Si aucune règle ne correspond après toutes ces vérifications, on passe.
+
+    // Default PASS if no rule matched
     Ok(xdp_action::XDP_PASS)
 }

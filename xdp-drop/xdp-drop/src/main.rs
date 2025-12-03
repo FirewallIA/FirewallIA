@@ -60,7 +60,7 @@ fn validate_args(opt: &Opt) {
 
 pub struct MyFirewallService {
     db_client: Arc<tokio_postgres::Client>,
-    blocklist: Arc<tokio::sync::Mutex<HashMap<aya::maps::MapData, IpPort, u32>>>,
+    blocklist: Arc<tokio::sync::Mutex<HashMap<&'static mut aya::maps::MapData, IpPort, u32>>>,
 }
 
 async fn fetch_and_format_rules_from_db(
@@ -164,8 +164,11 @@ impl FirewallService for MyFirewallService {
         // Récupération détails pour supprimer de BPF
         let row_opt = self.db_client.query_opt("SELECT source_ip, dest_ip, dest_port FROM rules WHERE id = $1", &[&rule_id_to_delete]).await
             .map_err(|e| tonic::Status::internal(format!("Erreur récupération règle: {}", e)))?;
-        let (source_ip, dest_ip, dest_port) = row_opt.ok_or_else(|| tonic::Status::not_found(format!("Règle ID {} non trouvée", rule_id_to_delete)))?
-            .into_iter().enumerate().map(|(_, val)| val).collect::<Vec<_>>().try_into().unwrap();
+        let row = row_opt.ok_or_else(|| tonic::Status::not_found(format!("Règle ID {} non trouvée", rule_id_to_delete)))?;
+        let source_ip: String = row.get("source_ip");
+        let dest_ip: String = row.get("dest_ip");
+        let dest_port: Option<i32> = row.get("dest_port");
+
 
         if let (Ok(ip_src), Ok(ip_dst)) = (source_ip.parse::<Ipv4Addr>(), dest_ip.parse::<Ipv4Addr>()) {
             let key = IpPort {

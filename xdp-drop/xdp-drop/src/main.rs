@@ -148,6 +148,42 @@ impl FirewallService for MyFirewallService {
             log::error!("Erreur insertion DB: {}", e);
             tonic::Status::internal(format!("Échec création règle DB: {}", e))
         })?.get(0);
+        
+         // a. Parsing des IPs (gestion de "any")
+        let ip_src = if rule_to_create.source_ip.to_lowercase() == "any" { 
+            Ipv4Addr::UNSPECIFIED 
+        } else { 
+            rule_to_create.source_ip.parse().map_err(|_| tonic::Status::invalid_argument("IP Source invalide"))? 
+        };
+        
+        let ip_dst = if rule_to_create.dest_ip.to_lowercase() == "any" { 
+            Ipv4Addr::UNSPECIFIED 
+        } else { 
+            rule_to_create.dest_ip.parse().map_err(|_| tonic::Status::invalid_argument("IP Dest invalide"))? 
+        };
+
+        // b. Construction de la clé
+        let key = IpPort {
+            addr: u32::from(ip_src).to_be(),
+            addr_dest: u32::from(ip_dst).to_be(),
+            port: dest_port_u16.to_be(),
+            protocol: protocol_to_u8(&Some(rule_to_create.protocol.clone())),
+            _pad: 0,
+        };
+
+        // c. Détermination de l'action (1 = DENY, 2 = ALLOW)
+        const ACTION_DENY: u32 = 1;
+        const ACTION_ALLOW: u32 = 2;
+        let action_value = if action_str == "deny" { ACTION_DENY } else { ACTION_ALLOW };
+
+        // d. Insertion dans la Map BPF
+        match self.blocklist.lock().await.insert(key, action_value, 0) {
+            Ok(_) => info!("🔥 Règle ajoutée au noyau (Hot-Reload)"),
+            Err(e) => {
+                log::error!("CRITIQUE: Règle ajoutée en DB mais échec BPF: {}", e);
+                // On ne renvoie pas forcément une erreur au client car la DB est OK, mais c'est dangereux
+            }
+        }
 
         // --- AJOUT LOG CREATION ---
         info!(
@@ -174,29 +210,37 @@ impl FirewallService for MyFirewallService {
         let rule_id_to_delete = req_data.rule.map(|r| r.id).ok_or_else(|| tonic::Status::invalid_argument("Données de suppression manquantes"))?;
         
         // Récupération détails pour supprimer de BPF
-        let row_opt = self.db_client.query_opt("SELECT source_ip, dest_ip, dest_port FROM rules WHERE id = $1", &[&rule_id_to_delete]).await
+        let row_opt = self.db_client.query_opt("SELECT source_ip, dest_ip, dest_port, protocol FROM rules WHERE id = $1", &[&rule_id_to_delete]).await
             .map_err(|e| tonic::Status::internal(format!("Erreur récupération règle: {}", e)))?;
+        
         let row = row_opt.ok_or_else(|| tonic::Status::not_found(format!("Règle ID {} non trouvée", rule_id_to_delete)))?;
+        
         let source_ip: String = row.get("source_ip");
         let dest_ip: String = row.get("dest_ip");
         let dest_port: Option<i32> = row.get("dest_port");
+        let protocol: Option<String> = row.get("protocol");
 
-        if let (Ok(ip_src), Ok(ip_dst)) = (source_ip.parse::<Ipv4Addr>(), dest_ip.parse::<Ipv4Addr>()) {
-            let key = IpPort {
-                addr: u32::from(ip_src).to_be(),
-                addr_dest: u32::from(ip_dst).to_be(),
-                port: (dest_port.unwrap_or(0) as u16).to_be(),
-                protocol: PROTO_ANY,
-                _pad: 0,
-            };
+        // --- 2. Suppression de la Map BPF ---
+        // On parse "any" ou l'IP spécifique
+        let ip_src = if source_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { source_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+        let ip_dst = if dest_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { dest_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+
+        let key = IpPort {
+            addr: u32::from(ip_src).to_be(),
+            addr_dest: u32::from(ip_dst).to_be(),
+            port: (dest_port.unwrap_or(0) as u16).to_be(),
+            protocol: protocol_to_u8(&protocol),
+            _pad: 0,
+        };
+
+        {
             let mut map = self.blocklist.lock().await;
             if map.remove(&key).is_ok() {
-                // --- AJOUT LOG SUPPRESSION BPF ---
-                // (Log technique BPF déjà présent, optionnel si vous voulez le garder)
-                // info!("Règle supprimée à chaud du BPF: {:?}", key);
+                info!("🔥 Règle supprimée du noyau (Hot-Reload): {:?}", key);
+            } else {
+                warn!("⚠️ Tentative de suppression BPF échouée (clé non trouvée ?): {:?}", key);
             }
         }
-
         // Suppression DB
         self.db_client.execute("DELETE FROM rules WHERE id = $1", &[&rule_id_to_delete]).await
             .map_err(|e| tonic::Status::internal(format!("Erreur suppression DB: {}", e)))?;

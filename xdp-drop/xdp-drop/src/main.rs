@@ -60,8 +60,7 @@ fn validate_args(opt: &Opt) {
 
 pub struct MyFirewallService {
     db_client: Arc<tokio_postgres::Client>,
-    // CORRECTION 1: On retire le lifetime et la référence &mut.
-    // On stocke MapData directement (owned) pour pouvoir le passer dans l'Arc sans problèmes de lifetime.
+    // Utilisation de MapData (owned) pour éviter les problèmes de durée de vie (lifetime)
     blocklist: Arc<tokio::sync::Mutex<HashMap<aya::maps::MapData, IpPort, u32>>>,
 }
 
@@ -141,6 +140,7 @@ impl FirewallService for MyFirewallService {
         let source_port_db: Option<i32> = rule_to_create.source_port.parse().ok();
         let dest_port_db: Option<i32> = rule_to_create.dest_port.parse().ok();
 
+        // Insertion DB
         let created_rule_id: i32 = self.db_client.query_one(
             "INSERT INTO rules (source_ip, dest_ip, source_port, dest_port, action, protocol) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             &[&rule_to_create.source_ip, &rule_to_create.dest_ip, &source_port_db, &dest_port_db, &action_str, &rule_to_create.protocol.to_uppercase()],
@@ -148,6 +148,17 @@ impl FirewallService for MyFirewallService {
             log::error!("Erreur insertion DB: {}", e);
             tonic::Status::internal(format!("Échec création règle DB: {}", e))
         })?.get(0);
+
+        // --- AJOUT LOG CREATION ---
+        info!(
+            "✅ Règle créée [ID: {}] : {} -> {} | Port Dest: {} | Proto: {} | Action: {}",
+            created_rule_id,
+            rule_to_create.source_ip,
+            rule_to_create.dest_ip,
+            dest_port_db.map_or("*".to_string(), |p| p.to_string()),
+            rule_to_create.protocol,
+            action_str
+        );
 
         Ok(Response::new(CreateRuleResponse {
             created_rule_id,
@@ -161,8 +172,7 @@ impl FirewallService for MyFirewallService {
     ) -> Result<Response<DeleteRuleResponse>, tonic::Status> {
         let req_data = request.into_inner();
         let rule_id_to_delete = req_data.rule.map(|r| r.id).ok_or_else(|| tonic::Status::invalid_argument("Données de suppression manquantes"))?;
-        info!("gRPC: DeleteRule ID {}", rule_id_to_delete);
-
+        
         // Récupération détails pour supprimer de BPF
         let row_opt = self.db_client.query_opt("SELECT source_ip, dest_ip, dest_port FROM rules WHERE id = $1", &[&rule_id_to_delete]).await
             .map_err(|e| tonic::Status::internal(format!("Erreur récupération règle: {}", e)))?;
@@ -170,7 +180,6 @@ impl FirewallService for MyFirewallService {
         let source_ip: String = row.get("source_ip");
         let dest_ip: String = row.get("dest_ip");
         let dest_port: Option<i32> = row.get("dest_port");
-
 
         if let (Ok(ip_src), Ok(ip_dst)) = (source_ip.parse::<Ipv4Addr>(), dest_ip.parse::<Ipv4Addr>()) {
             let key = IpPort {
@@ -181,13 +190,22 @@ impl FirewallService for MyFirewallService {
                 _pad: 0,
             };
             let mut map = self.blocklist.lock().await;
-            let _ = map.remove(&key);
-            info!("Règle supprimée à chaud du BPF: {:?}", key);
+            if map.remove(&key).is_ok() {
+                // --- AJOUT LOG SUPPRESSION BPF ---
+                // (Log technique BPF déjà présent, optionnel si vous voulez le garder)
+                // info!("Règle supprimée à chaud du BPF: {:?}", key);
+            }
         }
 
         // Suppression DB
         self.db_client.execute("DELETE FROM rules WHERE id = $1", &[&rule_id_to_delete]).await
             .map_err(|e| tonic::Status::internal(format!("Erreur suppression DB: {}", e)))?;
+
+        // --- AJOUT LOG SUPPRESSION GLOBALE ---
+        info!(
+            "🗑️  Règle supprimée [ID: {}] : {} -> {}", 
+            rule_id_to_delete, source_ip, dest_ip
+        );
 
         Ok(Response::new(DeleteRuleResponse {
             delete_rule_id: rule_id_to_delete,
@@ -219,10 +237,7 @@ async fn main() -> Result<(), anyhow::Error> {
     program.attach(&opt.iface, XdpFlags::default())?;
     info!("eBPF program loaded and attached to {}.", opt.iface);
 
-    // CORRECTION 2 & 3:
-    // - On utilise `take_map` pour prendre la possession (ownership) de la map hors de `bpf`.
-    // - On utilise `.ok_or(...)?` pour convertir l'Option en Result.
-    // - On utilise `HashMap::try_from` sur la map propriétaire (owned).
+    // Récupération de la map en prenant la possession (ownership) pour éviter les erreurs de type/lifetime
     let map = bpf.take_map("BLOCKLIST")
         .ok_or_else(|| anyhow::anyhow!("Map BLOCKLIST introuvable"))?;
     
@@ -239,6 +254,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let initial_rules = pg_client.query("SELECT id, source_ip, dest_ip, dest_port, action, protocol FROM rules", &[]).await?;
     const ACTION_DENY: u32 = 1;
     const ACTION_ALLOW: u32 = 2;
+    
+    info!("--- Chargement des règles au démarrage ---");
+    
     for row in initial_rules {
         let id: i32 = row.get("id");
         let source_ip: String = row.get("source_ip");
@@ -259,9 +277,20 @@ async fn main() -> Result<(), anyhow::Error> {
         };
         let action_value = match action.to_lowercase().as_str() { "deny" => ACTION_DENY, "allow" => ACTION_ALLOW, _ => continue };
         
-        // CORRECTION: Utilisation de la map partagée correctement typée
         blocklist.lock().await.insert(key, action_value, 0)?;
+
+        // --- AJOUT LOG DEMARRAGE ---
+        info!(
+            "📜 Règle chargée [ID: {}] : {} -> {} | Port Dest: {} | Proto: {} | Action: {}", 
+            id, 
+            source_ip, 
+            dest_ip, 
+            dest_port.map_or("*".to_string(), |p| p.to_string()),
+            protocol.unwrap_or_else(|| "any".to_string()),
+            action
+        );
     }
+    info!("--- Fin du chargement des règles ---");
 
     let firewall_service = MyFirewallService { db_client: Arc::clone(&pg_client), blocklist: Arc::clone(&blocklist) };
     let grpc_addr = "[::1]:50051".parse()?;

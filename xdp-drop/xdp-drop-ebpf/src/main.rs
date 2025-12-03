@@ -299,9 +299,29 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         protocol: PROTO_ANY,
         _pad: 0,
     };
-    if let Some(action) = check_firewall_rule(&key_any_any_anyproto_port_any) {
-        info!(&ctx, "MATCH (PROTO_ANY, all ANY) - BLOCK ALL");
-        return Ok(if action == ACTION_DENY_FROM_MAP { xdp_action::XDP_DROP } else { xdp_action::XDP_PASS });
+
+    let source_port = match protocol {
+        IpProto::Tcp => unsafe { (*ptr_at::<TcpHdr>(&ctx, transport_offset)?).source },
+        IpProto::Udp => unsafe { (*ptr_at::<UdpHdr>(&ctx, transport_offset)?).source },
+        _ => 0,
+    };
+
+    // On cherche une règle : (ANY Src, ANY Dest) - PORT SOURCE EXACT
+    // Cela signifie : "Est-ce qu'on autorise le trafic venant de ce port ?"
+    let key_check_source_port = IpPort {
+        addr: IP_ANY_BE,      // On s'en fiche de l'IP pour ce check rapide
+        addr_dest: IP_ANY_BE,
+        port: source_port,     // <--- ON UTILISE LE PORT SOURCE ICI
+        protocol: protocol as u8,
+        _pad: 0,
+    };
+
+    if let Some(action) = check_firewall_rule(&key_check_source_port) {
+        // Si on trouve une règle ALLOW pour ce port (ex: 10022), on laisse passer le retour !
+        if *action == ACTION_ALLOW_FROM_MAP {
+             info!(&ctx, "✅ RETOUR AUTORISÉ via Port Source: {}", u16::from_be(source_port));
+             return Ok(xdp_action::XDP_PASS);
+        }
     }
     // Si aucune règle ne correspond après toutes ces vérifications, on passe.
     Ok(xdp_action::XDP_PASS)

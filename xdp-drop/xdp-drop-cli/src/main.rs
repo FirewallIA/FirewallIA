@@ -35,6 +35,8 @@ enum Commands {
     ListRules, // Nouvelle sous-commande
     // ... futures commandes
     CreateRule {
+         #[clap(long)]
+        name: String,     
         #[clap(long)]
         source_ip: String,
         #[clap(long)]
@@ -70,12 +72,13 @@ async fn handle_list_rules(client: &mut FirewallServiceClient<tonic::transport::
         println!("Aucune règle active trouvée.");
     } else {
         println!("Règles actives du firewall :");
-        println!("{:<5} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
-                 "ID", "Source IP", "Dest IP", "Src Port", "Dest Port", "Action", "Proto", "Hits");
+        println!("{:<5} | {:<20} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
+                 "ID", "Name","Source IP", "Dest IP", "Src Port", "Dest Port", "Action", "Proto", "Hits");
         println!("{}", "-".repeat(100)); // Séparateur
         for rule in response.rules {
-            println!("{:<5} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
+            println!("{:<5} | {:<20} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
                      rule.id,
+                     rule.name
                      rule.source_ip,
                      rule.dest_ip,
                      rule.source_port,
@@ -164,6 +167,7 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
             // Le compilateur va vous dire que RuleData n'est pas trouvé ici ensuite
             // car il n'est pas importé.
             let rule_data = firewall::RuleData { // <--- Préciser firewall::RuleData
+                name,
                 source_ip,
                 dest_ip,
                 source_port,

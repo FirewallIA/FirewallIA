@@ -157,6 +157,7 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
             handle_list_rules(&mut client).await?;
         }
         Commands::CreateRule { // Variante de l'enum
+            name,
             source_ip,         // Déstructuration des champs nommés
             dest_ip,
             source_port,

@@ -78,7 +78,7 @@ async fn handle_list_rules(client: &mut FirewallServiceClient<tonic::transport::
         for rule in response.rules {
             println!("{:<5} | {:<20} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
                      rule.id,
-                     rule.name
+                     rule.name,
                      rule.source_ip,
                      rule.dest_ip,
                      rule.source_port,

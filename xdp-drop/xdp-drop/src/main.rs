@@ -92,7 +92,7 @@ async fn fetch_and_format_rules_from_db(
 
         rule_infos.push(RuleInfo {
             id,
-            name: name_str, // Correction syntaxe (c'était name = name_str)
+            name: name_str,
             source_ip: source_ip_str,
             dest_ip: dest_ip_str,
             source_port: source_port_opt.map_or("*".to_string(), |p| p.to_string()),

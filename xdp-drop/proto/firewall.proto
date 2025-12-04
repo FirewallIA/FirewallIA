@@ -18,13 +18,14 @@ message FirewallStatus {
 // Message pour une seule règle
 message RuleInfo {
     int32 id = 1;
-    string source_ip = 2;
-    string dest_ip = 3;
-    string source_port = 4; // Utiliser string pour pouvoir mettre "*"
-    string dest_port = 5;   // Utiliser string pour pouvoir mettre "*"
-    string action = 6;
-    string protocol = 7;
-    int32 usage_count = 8;
+     string name = 2;
+    string source_ip = 3;
+    string dest_ip = 4;
+    string source_port = 5; // Utiliser string pour pouvoir mettre "*"
+    string dest_port = 6;   // Utiliser string pour pouvoir mettre "*"
+    string action = 7;
+    string protocol = 8;
+    int32 usage_count = 9;
 }
 
 // Message pour la liste des règles
@@ -34,12 +35,13 @@ message RuleListResponse {
 
 // Message pour la requête de création de règle
 message RuleData { 
-    string source_ip = 1;
-    string dest_ip = 2;
-    string source_port = 3; // Peut être "*" ou un numéro
-    string dest_port = 4;   // Peut être "*" ou un numéro
-    string action = 5;      // "ALLOW", "DENY"
-    string protocol = 6;    // "TCP", "UDP", "ANY", etc.
+     string name = 1;
+    string source_ip = 2;
+    string dest_ip = 3;
+    string source_port = 4; // Peut être "*" ou un numéro
+    string dest_port = 5;   // Peut être "*" ou un numéro
+    string action = 6;      // "ALLOW", "DENY"
+    string protocol = 7;    // "TCP", "UDP", "ANY", etc.
 }
 
 message CreateRuleRequest {

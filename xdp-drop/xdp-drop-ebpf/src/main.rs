@@ -252,7 +252,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     else if src_is_priv && !dst_is_priv { increment_stat(STAT_OUTBOUND); }
     
     Ok(xdp_action::XDP_PASS)
-
+}
 
 #[inline(always)]
 fn is_private_ip(ip: u32) -> bool {
@@ -304,4 +304,3 @@ fn verdict(action: u32, src_ip: u32, dst_ip: u32) -> u32 {
     xdp_action::XDP_PASS
 }
 
-}

@@ -44,4 +44,11 @@ pub struct IpPort {
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for IpPort {} // Ajoutez ceci pour IpPort, comme pour PacketLog
 
+
+// Index dans la map de stats
+pub const STAT_INBOUND: u32 = 0;
+pub const STAT_OUTBOUND: u32 = 1;
+pub const STAT_BLOCKED: u32 = 2;
+pub const STAT_TOTAL_TYPES: u32 = 3; // Taille du tableau
+
 // --- Autres définitions partagées si nécessaire ---

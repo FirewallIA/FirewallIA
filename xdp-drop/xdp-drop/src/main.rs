@@ -2,7 +2,9 @@ use anyhow::Context;
 use aya::{
     include_bytes_aligned,
     maps::HashMap,
+    maps::PerCpuArray,
     programs::{Xdp, XdpFlags},
+    util::nr_cpus,
     Ebpf,
 };
 use aya_log::EbpfLogger;
@@ -14,6 +16,8 @@ use std::sync::Arc;
 use tokio::signal;
 use tonic::{transport::Server, Request, Response};
 use xdp_drop_common::{IpPort, PROTO_ANY, PROTO_ICMP, PROTO_TCP, PROTO_UDP};
+use xdp_drop_common::{STAT_INBOUND, STAT_OUTBOUND, STAT_BLOCKED, STAT_TOTAL_TYPES};
+
 
 // modules firewall et google
 pub mod firewall {
@@ -316,6 +320,69 @@ impl FirewallService for MyFirewallService {
     }
 }
 
+// Fonction pour récolter les stats et les envoyer en DB
+async fn collect_and_store_stats(
+    // On passe la map eBPF
+    stats_map: PerCpuArray<aya::maps::MapData, u64>,
+    // On passe le client DB
+    db: Arc<tokio_postgres::Client>,
+) {
+    // On définit l'intervalle d'enregistrement (ex: 10 secondes)
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+    
+    // Variables pour stocker la valeur précédente (pour calculer la différence)
+    let mut prev_inbound = 0u64;
+    let mut prev_outbound = 0u64;
+    let mut prev_blocked = 0u64;
+
+    loop {
+        // Attendre 10 secondes
+        interval.tick().await;
+
+        let mut curr_inbound = 0u64;
+        let mut curr_outbound = 0u64;
+        let mut curr_blocked = 0u64;
+
+        // 1. Lire STAT_INBOUND (somme de tous les CPUs)
+        if let Ok(values) = stats_map.get(&STAT_INBOUND, 0) {
+            curr_inbound = values.iter().sum();
+        }
+
+        // 2. Lire STAT_OUTBOUND
+        if let Ok(values) = stats_map.get(&STAT_OUTBOUND, 0) {
+            curr_outbound = values.iter().sum();
+        }
+
+        // 3. Lire STAT_BLOCKED
+        if let Ok(values) = stats_map.get(&STAT_BLOCKED, 0) {
+            curr_blocked = values.iter().sum();
+        }
+
+        // 4. Calcul du Delta (Combien de nouveaux paquets depuis 10s ?)
+        let delta_inbound = curr_inbound.saturating_sub(prev_inbound);
+        let delta_outbound = curr_outbound.saturating_sub(prev_outbound);
+        let delta_blocked = curr_blocked.saturating_sub(prev_blocked);
+
+        // Mise à jour des "prev" pour le prochain tour
+        prev_inbound = curr_inbound;
+        prev_outbound = curr_outbound;
+        prev_blocked = curr_blocked;
+
+        // 5. Insertion en base de données (seulement s'il y a de l'activité)
+        if delta_inbound > 0 || delta_outbound > 0 || delta_blocked > 0 {
+            let res = db.execute(
+                "INSERT INTO traffic_stats (inbound_count, outbound_count, blocked_count) VALUES ($1, $2, $3)",
+                &[&(delta_inbound as i64), &(delta_outbound as i64), &(delta_blocked as i64)],
+            ).await;
+
+            match res {
+                Ok(_) => log::info!("📊 Stats saved: In +{} | Out +{} | Blocked +{}", delta_inbound, delta_outbound, delta_blocked),
+                Err(e) => log::error!("Erreur insertion stats DB: {}", e),
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
@@ -429,6 +496,33 @@ async fn main() -> Result<(), anyhow::Error> {
         );
     }
     info!("--- Fin du chargement des règles ---");
+
+     // ================== AJOUT STATS ==================
+
+    // 1. Récupérer la map TRAFFIC_STATS depuis le programme eBPF chargé
+    let stats_map_data = bpf
+        .take_map("TRAFFIC_STATS")
+        .ok_or_else(|| anyhow::anyhow!("Map TRAFFIC_STATS introuvable dans le programme eBPF"))?;
+
+    // 2. La convertir en PerCpuArray (le type Rust approprié)
+    let stats_map: PerCpuArray<aya::maps::MapData, u64> = PerCpuArray::try_from(stats_map_data)?;
+
+    // 3. Cloner le client DB pour le donner au thread de stats
+    let db_client_for_stats = Arc::clone(&pg_client);
+
+    // 4. Lancer la tâche de fond (tokio::spawn)
+    tokio::spawn(async move {
+        collect_and_store_stats(stats_map, db_client_for_stats).await;
+    });
+
+    info!("📊 Module de statistiques démarré.");
+
+    // ================== FIN AJOUT STATS ==================
+
+    let firewall_service = MyFirewallService {
+        db_client: Arc::clone(&pg_client),
+        blocklist: Arc::clone(&blocklist),
+    };
 
     let firewall_service = MyFirewallService {
         db_client: Arc::clone(&pg_client),

@@ -364,17 +364,27 @@ impl FirewallService for MyFirewallService {
     // 3. Requête pour le GRAPHIQUE (Time Series)
     // On utilise date_trunc pour "arrondir" le temps au bucket choisi
     let query_chart = format!(
-        "SELECT 
-            date_trunc('{}', time) as bucket_time,
-            COALESCE(SUM(inbound_count), 0)::BIGINT as inc, 
-            COALESCE(SUM(outbound_count), 0)::BIGINT as outc, 
-            COALESCE(SUM(blocked_count), 0)::BIGINT as blkc 
-        FROM traffic_stats 
-        WHERE time > NOW() - INTERVAL '{}'
-        GROUP BY bucket_time
-        ORDER BY bucket_time ASC",
-        bucket_size, 
-        sql_interval
+        "WITH grid AS (
+            SELECT generate_series(
+                NOW() - INTERVAL '{}', 
+                NOW(), 
+                '1 {}'::interval
+            ) as bucket_time
+        )
+        SELECT 
+            grid.bucket_time,
+            COALESCE(SUM(ts.inbound_count), 0)::BIGINT as inc, 
+            COALESCE(SUM(ts.outbound_count), 0)::BIGINT as outc, 
+            COALESCE(SUM(ts.blocked_count), 0)::BIGINT as blkc 
+        FROM grid
+        LEFT JOIN traffic_stats ts 
+        ON date_trunc('{}', ts.time) = date_trunc('{}', grid.bucket_time)
+        GROUP BY grid.bucket_time
+        ORDER BY grid.bucket_time ASC",
+        sql_interval, // ex: "24 hours"
+        bucket_size,  // ex: "hour" (devient '1 hour')
+        bucket_size,  // pour le date_trunc jointure
+        bucket_size   // pour le date_trunc jointure
     );
 
     let rows_chart = self.db_client.query(query_chart.as_str(), &[])

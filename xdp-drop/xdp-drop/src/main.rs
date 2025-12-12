@@ -326,9 +326,9 @@ impl FirewallService for MyFirewallService {
 
         let query = "
             SELECT 
-                COALESCE(SUM(inbound_count), 0) as total_in, 
-                COALESCE(SUM(outbound_count), 0) as total_out, 
-                COALESCE(SUM(blocked_count), 0) as total_blocked 
+                COALESCE(SUM(inbound_count), 0)::BIGINT as total_in, 
+                COALESCE(SUM(outbound_count), 0)::BIGINT as total_out, 
+                COALESCE(SUM(blocked_count), 0)::BIGINT as total_blocked 
             FROM traffic_stats
         ";
 

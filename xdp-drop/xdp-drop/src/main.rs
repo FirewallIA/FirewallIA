@@ -4,7 +4,6 @@ use aya::{
     maps::HashMap,
     maps::PerCpuArray,
     programs::{Xdp, XdpFlags},
-    util::nr_cpus,
     Ebpf,
 };
 use aya_log::EbpfLogger;
@@ -16,8 +15,7 @@ use std::sync::Arc;
 use tokio::signal;
 use tonic::{transport::Server, Request, Response};
 use xdp_drop_common::{IpPort, PROTO_ANY, PROTO_ICMP, PROTO_TCP, PROTO_UDP};
-use xdp_drop_common::{STAT_INBOUND, STAT_OUTBOUND, STAT_BLOCKED, STAT_TOTAL_TYPES};
-
+use xdp_drop_common::{STAT_INBOUND, STAT_OUTBOUND, STAT_BLOCKED};
 
 // modules firewall et google
 pub mod firewall {
@@ -30,9 +28,10 @@ pub mod google {
 }
 
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
+// CORRECTION 1 : Ajout des imports manquants (GetTrafficStatsRequest, GetTrafficStatsResponse)
 use crate::firewall::{
     CreateRuleRequest, CreateRuleResponse, DeleteRuleRequest, DeleteRuleResponse, FirewallStatus,
-    RuleInfo, RuleListResponse,
+    RuleInfo, RuleListResponse, GetTrafficStatsRequest, GetTrafficStatsResponse
 };
 use crate::google::protobuf::Empty;
 
@@ -166,7 +165,6 @@ impl FirewallService for MyFirewallService {
         let dest_port_u16 = dest_port_db.unwrap_or(0) as u16;
 
         // --- 2. Insertion dans la Base de Données ---
-        // CORRECTION MAJEURE ICI : Ajout du paramètre $7 et insertion correcte de `name`
         let created_rule_id: i32 = self.db_client.query_one(
             "INSERT INTO rules (name, source_ip, dest_ip, source_port, dest_port, action, protocol) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
             &[
@@ -318,16 +316,15 @@ impl FirewallService for MyFirewallService {
             message: format!("Règle ID {} supprimée avec succès.", rule_id_to_delete),
         }))
     }
-    sync fn get_traffic_stats(
+
+    // CORRECTION 2 : 'sync' remplacé par 'async'
+    async fn get_traffic_stats(
         &self,
         request: Request<GetTrafficStatsRequest>,
             ) -> Result<Response<GetTrafficStatsResponse>, tonic::Status> {
         let req = request.into_inner();
         info!("gRPC: Demande de statistiques reçue (Range: {:?})", req.time_range);
 
-        // 1. Définition de la requête SQL
-        // On utilise COALESCE pour retourner 0 si la table est vide (sinon SUM renvoie NULL)
-        // Par défaut, on fait la somme totale (toute l'historique)
         let query = "
             SELECT 
                 COALESCE(SUM(inbound_count), 0) as total_in, 
@@ -336,11 +333,6 @@ impl FirewallService for MyFirewallService {
             FROM traffic_stats
         ";
 
-        // Note: Si vous vouliez filtrer par les dernières 24h, la requête serait :
-        // "SELECT ... FROM traffic_stats WHERE time > NOW() - INTERVAL '24 hours'"
-        // Ici, on fait simple : tout l'historique.
-
-        // 2. Exécution de la requête
         let row = self.db_client
             .query_one(query, &[])
             .await
@@ -349,7 +341,6 @@ impl FirewallService for MyFirewallService {
                 tonic::Status::internal("Erreur lors de la lecture des statistiques en base de données")
             })?;
 
-        // 3. Extraction des données (Postgres BIGINT -> Rust i64)
         let total_in: i64 = row.get("total_in");
         let total_out: i64 = row.get("total_out");
         let total_blocked: i64 = row.get("total_blocked");
@@ -479,7 +470,6 @@ async fn main() -> Result<(), anyhow::Error> {
     });
 
     // Initial load des règles dans BPF
-    // J'ai ajouté 'name' dans le SELECT ici aussi pour l'avoir dans les logs
     let initial_rules = pg_client
         .query(
             "SELECT id, name, source_ip, dest_ip, dest_port, action, protocol FROM rules",
@@ -526,7 +516,6 @@ async fn main() -> Result<(), anyhow::Error> {
 
         blocklist.lock().await.insert(key, action_value, 0)?;
 
-        // --- AJOUT LOG DEMARRAGE AVEC LE NOM ---
         info!(
             "📜 Règle chargée [ID: {} | {}] : {} -> {} | Port Dest: {} | Proto: {} | Action: {}",
             id,
@@ -542,18 +531,14 @@ async fn main() -> Result<(), anyhow::Error> {
 
      // ================== AJOUT STATS ==================
 
-    // 1. Récupérer la map TRAFFIC_STATS depuis le programme eBPF chargé
     let stats_map_data = bpf
         .take_map("TRAFFIC_STATS")
         .ok_or_else(|| anyhow::anyhow!("Map TRAFFIC_STATS introuvable dans le programme eBPF"))?;
 
-    // 2. La convertir en PerCpuArray (le type Rust approprié)
     let stats_map: PerCpuArray<aya::maps::MapData, u64> = PerCpuArray::try_from(stats_map_data)?;
 
-    // 3. Cloner le client DB pour le donner au thread de stats
     let db_client_for_stats = Arc::clone(&pg_client);
 
-    // 4. Lancer la tâche de fond (tokio::spawn)
     tokio::spawn(async move {
         collect_and_store_stats(stats_map, db_client_for_stats).await;
     });
@@ -567,10 +552,8 @@ async fn main() -> Result<(), anyhow::Error> {
         blocklist: Arc::clone(&blocklist),
     };
 
-    let firewall_service = MyFirewallService {
-        db_client: Arc::clone(&pg_client),
-        blocklist: Arc::clone(&blocklist),
-    };
+    // CORRECTION 3: suppression du bloc firewall_service dupliqué ici
+
     let grpc_addr = "[::1]:50051".parse()?;
     tokio::spawn(
         Server::builder()

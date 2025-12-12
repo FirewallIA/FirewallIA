@@ -328,6 +328,11 @@ impl FirewallService for MyFirewallService {
         // 1. Détermination de la clause WHERE et du Libellé
         // On associe l'entrée utilisateur à un intervalle SQL PostgreSQL sécurisé
         let (sql_condition, period_label) = match range_input.as_str() {
+            
+            "5m" | "5minutes" => (
+                "WHERE time > NOW() - INTERVAL '5 minutes'", 
+                "5 dernière minutes"
+            ),
             "1h" | "1hour" => (
                 "WHERE time > NOW() - INTERVAL '1 hour'", 
                 "Dernière heure"

@@ -55,7 +55,7 @@ enum Commands {
         id: i32,
     },
     TrafficStats {
-    /// Période d'analyse : "1h", "4h", "24h", "1w" ou "all"
+    /// Période d'analyse : "5m", "1h", "4h", "24h", "1w" ou "all"
         #[clap(default_value = "all")]
         range: String,
     },

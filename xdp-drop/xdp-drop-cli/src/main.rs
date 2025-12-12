@@ -149,7 +149,7 @@ range_arg: String
 ) -> anyhow::Result<()> {
     // On peut laisser time_range vide pour l'instant
     let request = tonic::Request::new(firewall::GetTrafficStatsRequest {
-        time_range: "all".to_string(),
+        time_range: range_arg,
     });
 
     let response = client.get_traffic_stats(request).await?.into_inner();

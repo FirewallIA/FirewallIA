@@ -318,74 +318,101 @@ impl FirewallService for MyFirewallService {
 
     
     async fn get_traffic_stats(
-        &self,
-        request: Request<GetTrafficStatsRequest>,
-    ) -> Result<Response<GetTrafficStatsResponse>, tonic::Status> {
-        let req = request.into_inner();
-        let range_input = req.time_range.trim().to_lowercase(); 
-        info!("gRPC: Demande de statistiques reçue (Range: {:?})", range_input);
+    &self,
+    request: Request<GetTrafficStatsRequest>,
+) -> Result<Response<GetTrafficStatsResponse>, tonic::Status> {
+    let req = request.into_inner();
+    // Nettoyage de l'input
+    let range_input = req.time_range.trim().to_lowercase();
+    
+    info!("gRPC: Demande de stats (Range: '{}')", range_input);
 
-        // 1. Détermination de la clause WHERE et du Libellé
-        // On associe l'entrée utilisateur à un intervalle SQL PostgreSQL sécurisé
-        let (sql_condition, period_label) = match range_input.as_str() {
-            
-            "5m" | "5minutes" => (
-                "WHERE time > NOW() - INTERVAL '5 minutes'", 
-                "5 dernière minutes"
-            ),
-            "1h" | "1hour" => (
-                "WHERE time > NOW() - INTERVAL '1 hour'", 
-                "Dernière heure"
-            ),
-            "4h" | "4hours" => (
-                "WHERE time > NOW() - INTERVAL '4 hours'", 
-                "4 dernières heures"
-            ),
-            "12h" | "12hours" => (
-                "WHERE time > NOW() - INTERVAL '12 hours'", 
-                "12 dernières heures"
-            ),
-            "24h" | "day" => (
-                "WHERE time > NOW() - INTERVAL '24 hours'", 
-                "Dernières 24 heures"
-            ),
-            "1w" | "week" => (
-                "WHERE time > NOW() - INTERVAL '1 week'", 
-                "Dernière semaine"
-            ),
-            // Par défaut (ou si "all"), on prend tout
-            _ => ("", "Global (Historique complet)"), 
-        };
+    // 1. Configuration de l'agrégation (Bucketing)
+    // sql_interval : jusqu'à quand on remonte dans le passé
+    // bucket_size  : la taille d'un point sur le graphique (minute, heure, jour)
+    let (sql_interval, bucket_size, period_label) = match range_input.as_str() {
+        "5m" | "5min" => ("5 minutes", "minute", "5 dernières minutes"),
+        "1h" | "1hour" => ("1 hour", "minute", "Dernière heure"), // 60 points
+        "4h" | "4hours" => ("4 hours", "minute", "4 dernières heures"), // 240 points
+        "12h" | "12hours" => ("12 hours", "hour", "12 dernières heures"),
+        "24h" | "day" => ("24 hours", "hour", "Dernières 24 heures"), // 24 points
+        "7d" | "1w" | "week" => ("1 week", "day", "Dernière semaine"), // 7 points
+        "30d" | "month" => ("1 month", "day", "Dernier mois"), // 30 points
+        // Par défaut (All), on groupe par jour pour ne pas exploser le graph
+        _ => ("100 years", "day", "Global (Historique complet)"), 
+    };
 
-        let query = format!("
-            SELECT 
-                COALESCE(SUM(inbound_count), 0)::BIGINT as total_in, 
-                COALESCE(SUM(outbound_count), 0)::BIGINT as total_out, 
-                COALESCE(SUM(blocked_count), 0)::BIGINT as total_blocked 
-            FROM traffic_stats
-            {}",
-            sql_condition
-        );
+    // 2. Requête pour les TOTAUX (Chiffres clés)
+    // On garde cette requête simple pour avoir les gros chiffres en haut
+    let query_totals = format!(
+        "SELECT 
+            COALESCE(SUM(inbound_count), 0)::BIGINT as total_in, 
+            COALESCE(SUM(outbound_count), 0)::BIGINT as total_out, 
+            COALESCE(SUM(blocked_count), 0)::BIGINT as total_blocked 
+        FROM traffic_stats 
+        WHERE time > NOW() - INTERVAL '{}'",
+        sql_interval
+    );
 
-        let row = self.db_client
-            .query_one(query.as_str(), &[])
-            .await
-            .map_err(|e| {
-                log::error!("Erreur lecture stats DB: {}", e);
-                tonic::Status::internal("Erreur lors de la lecture des statistiques en base de données")
-            })?;
+    let row_totals = self.db_client.query_one(query_totals.as_str(), &[])
+        .await
+        .map_err(|e| {
+            log::error!("Erreur SQL Totals: {}", e);
+            tonic::Status::internal("Erreur DB")
+        })?;
 
-        let total_in: i64 = row.get("total_in");
-        let total_out: i64 = row.get("total_out");
-        let total_blocked: i64 = row.get("total_blocked");
+    // 3. Requête pour le GRAPHIQUE (Time Series)
+    // On utilise date_trunc pour "arrondir" le temps au bucket choisi
+    let query_chart = format!(
+        "SELECT 
+            date_trunc('{}', time) as bucket_time,
+            COALESCE(SUM(inbound_count), 0)::BIGINT as inc, 
+            COALESCE(SUM(outbound_count), 0)::BIGINT as outc, 
+            COALESCE(SUM(blocked_count), 0)::BIGINT as blkc 
+        FROM traffic_stats 
+        WHERE time > NOW() - INTERVAL '{}'
+        GROUP BY bucket_time
+        ORDER BY bucket_time ASC",
+        bucket_size, 
+        sql_interval
+    );
 
-        Ok(Response::new(GetTrafficStatsResponse {
-            total_inbound: total_in,
-            total_outbound: total_out,
-            total_blocked: total_blocked,
-            time_period: period_label.to_string(),
-        }))
+    let rows_chart = self.db_client.query(query_chart.as_str(), &[])
+        .await
+        .map_err(|e| {
+            log::error!("Erreur SQL Chart: {}", e);
+            tonic::Status::internal("Erreur DB Chart")
+        })?;
+
+    // 4. Transformation des données pour gRPC
+    // Il faut utiliser crate::firewall::TrafficPoint ici
+    let mut chart_data_vec = Vec::new();
+
+    for row in rows_chart {
+        // Récupération de la date Postgres (SystemTime)
+        let time_val: SystemTime = row.get("bucket_time");
+        
+        // Conversion en Timestamp UNIX (i64) pour le frontend
+        let timestamp = time_val
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        chart_data_vec.push(crate::firewall::TrafficPoint {
+            timestamp,
+            inbound: row.get("inc"),
+            outbound: row.get("outc"),
+            blocked: row.get("blkc"),
+        });
     }
+
+    Ok(Response::new(GetTrafficStatsResponse {
+        total_inbound: row_totals.get("total_in"),
+        total_outbound: row_totals.get("total_out"),
+        total_blocked: row_totals.get("total_blocked"),
+        time_period: period_label.to_string(),
+        chart_data: chart_data_vec, // <--- On envoie le tableau rempli
+    }))
 }
 
 // Fonction pour récolter les stats et les envoyer en DB

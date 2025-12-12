@@ -79,4 +79,13 @@ message GetTrafficStatsResponse {
     int64 total_outbound = 2;
     int64 total_blocked = 3;
     string time_period = 4; // Pour afficher "Depuis le début" ou "Dernières 24h"
+    
+    repeated TrafficPoint chart_data = 5; 
+}
+
+message TrafficPoint {
+    int64 timestamp = 1; // Timestamp UNIX (secondes)
+    int64 inbound = 2;
+    int64 outbound = 3;
+    int64 blocked = 4;
 }

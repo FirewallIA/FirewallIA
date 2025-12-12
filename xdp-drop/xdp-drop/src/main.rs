@@ -322,7 +322,8 @@ impl FirewallService for MyFirewallService {
         request: Request<GetTrafficStatsRequest>,
     ) -> Result<Response<GetTrafficStatsResponse>, tonic::Status> {
         let req = request.into_inner();
-         let range_input = req.time_range.to_lowercase(); 
+        let range_input = req.time_range.trim().to_lowercase(); 
+        info!("DEBUG: Reçu brut='{}' -> Nettoyé='{}'", req.time_range, range_input);
         info!("gRPC: Demande de statistiques reçue (Range: {:?})", range_input);
 
         // 1. Détermination de la clause WHERE et du Libellé

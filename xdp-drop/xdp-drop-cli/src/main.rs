@@ -54,6 +54,7 @@ enum Commands {
         #[clap(long)]
         id: i32,
     },
+    TrafficStats,
 }
 
 async fn handle_get_status(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
@@ -138,6 +139,35 @@ async fn handle_delete_rule(
     Ok(())
 }
 
+sync fn handle_get_stats(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
+    // On peut laisser time_range vide pour l'instant
+    let request = tonic::Request::new(firewall::GetTrafficStatsRequest {
+        time_range: "all".to_string(),
+    });
+
+    let response = client.get_traffic_stats(request).await?.into_inner();
+
+    println!("\n📊  STATISTIQUES DU TRAFIC RÉSEAU");
+    println!("-----------------------------------");
+    println!("Période : {}", response.time_period);
+    println!("-----------------------------------");
+    // Formatage avec des séparateurs de milliers pour la lisibilité (optionnel mais sympa)
+    println!("🟢  Total Entrant (Inbound)  : {:>10} paquets", response.total_inbound);
+    println!("🔵  Total Sortant (Outbound) : {:>10} paquets", response.total_outbound);
+    println!("🔴  Total Bloqué (Blocked)   : {:>10} paquets", response.total_blocked);
+    println!("-----------------------------------");
+    
+    // Petit calcul de pourcentage de blocage
+    let total = response.total_inbound + response.total_blocked; // Approx (selon logique eBPF)
+    if total > 0 {
+        let percent = (response.total_blocked as f64 / total as f64) * 100.0;
+        println!("🛡️  Ratio de blocage         : {:>10.2} %", percent);
+    }
+    println!();
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
     let cli = Cli::parse();
@@ -180,7 +210,10 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
         }
         Commands::DeleteRule { id } => { // Gérer la nouvelle commande
             handle_delete_rule(&mut client, id).await?;
-        }
+        },
+        Commands::TrafficStats => {
+        handle_get_stats(&mut client).await?;
+        },
     }
 
     Ok(())

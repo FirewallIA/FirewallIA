@@ -318,6 +318,49 @@ impl FirewallService for MyFirewallService {
             message: format!("Règle ID {} supprimée avec succès.", rule_id_to_delete),
         }))
     }
+    sync fn get_traffic_stats(
+        &self,
+        request: Request<GetTrafficStatsRequest>,
+            ) -> Result<Response<GetTrafficStatsResponse>, tonic::Status> {
+        let req = request.into_inner();
+        info!("gRPC: Demande de statistiques reçue (Range: {:?})", req.time_range);
+
+        // 1. Définition de la requête SQL
+        // On utilise COALESCE pour retourner 0 si la table est vide (sinon SUM renvoie NULL)
+        // Par défaut, on fait la somme totale (toute l'historique)
+        let query = "
+            SELECT 
+                COALESCE(SUM(inbound_count), 0) as total_in, 
+                COALESCE(SUM(outbound_count), 0) as total_out, 
+                COALESCE(SUM(blocked_count), 0) as total_blocked 
+            FROM traffic_stats
+        ";
+
+        // Note: Si vous vouliez filtrer par les dernières 24h, la requête serait :
+        // "SELECT ... FROM traffic_stats WHERE time > NOW() - INTERVAL '24 hours'"
+        // Ici, on fait simple : tout l'historique.
+
+        // 2. Exécution de la requête
+        let row = self.db_client
+            .query_one(query, &[])
+            .await
+            .map_err(|e| {
+                log::error!("Erreur lecture stats DB: {}", e);
+                tonic::Status::internal("Erreur lors de la lecture des statistiques en base de données")
+            })?;
+
+        // 3. Extraction des données (Postgres BIGINT -> Rust i64)
+        let total_in: i64 = row.get("total_in");
+        let total_out: i64 = row.get("total_out");
+        let total_blocked: i64 = row.get("total_blocked");
+
+        Ok(Response::new(GetTrafficStatsResponse {
+            total_inbound: total_in,
+            total_outbound: total_out,
+            total_blocked: total_blocked,
+            time_period: "Global (Historique complet)".to_string(),
+        }))
+    }
 }
 
 // Fonction pour récolter les stats et les envoyer en DB

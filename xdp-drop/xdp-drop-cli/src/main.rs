@@ -54,7 +54,12 @@ enum Commands {
         #[clap(long)]
         id: i32,
     },
-    TrafficStats,
+    TrafficStats {
+    /// Période d'analyse : "1h", "4h", "24h", "1w" ou "all"
+        #[clap(default_value = "all")]
+        range: String,
+    },
+
 }
 
 async fn handle_get_status(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
@@ -139,7 +144,9 @@ async fn handle_delete_rule(
     Ok(())
 }
 
-async fn handle_get_stats(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
+async fn handle_get_stats(client: &mut FirewallServiceClient<tonic::transport::Channel>,
+range_arg: String
+) -> anyhow::Result<()> {
     // On peut laisser time_range vide pour l'instant
     let request = tonic::Request::new(firewall::GetTrafficStatsRequest {
         time_range: "all".to_string(),
@@ -211,8 +218,8 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
         Commands::DeleteRule { id } => { // Gérer la nouvelle commande
             handle_delete_rule(&mut client, id).await?;
         },
-        Commands::TrafficStats => {
-        handle_get_stats(&mut client).await?;
+        Commands::TrafficStats { range } => {
+        handle_get_stats(&mut client, range).await?;
         },
     }
 

@@ -322,18 +322,48 @@ impl FirewallService for MyFirewallService {
         request: Request<GetTrafficStatsRequest>,
     ) -> Result<Response<GetTrafficStatsResponse>, tonic::Status> {
         let req = request.into_inner();
-        info!("gRPC: Demande de statistiques reçue (Range: {:?})", req.time_range);
+         let range_input = req.time_range.to_lowercase(); 
+        info!("gRPC: Demande de statistiques reçue (Range: {:?})", range_input);
 
-        let query = "
+        // 1. Détermination de la clause WHERE et du Libellé
+        // On associe l'entrée utilisateur à un intervalle SQL PostgreSQL sécurisé
+        let (sql_condition, period_label) = match range_input.as_str() {
+            "1h" | "1hour" => (
+                "WHERE time > NOW() - INTERVAL '1 hour'", 
+                "Dernière heure"
+            ),
+            "4h" | "4hours" => (
+                "WHERE time > NOW() - INTERVAL '4 hours'", 
+                "4 dernières heures"
+            ),
+            "12h" | "12hours" => (
+                "WHERE time > NOW() - INTERVAL '12 hours'", 
+                "12 dernières heures"
+            ),
+            "24h" | "day" => (
+                "WHERE time > NOW() - INTERVAL '24 hours'", 
+                "Dernières 24 heures"
+            ),
+            "1w" | "week" => (
+                "WHERE time > NOW() - INTERVAL '1 week'", 
+                "Dernière semaine"
+            ),
+            // Par défaut (ou si "all"), on prend tout
+            _ => ("", "Global (Historique complet)"), 
+        };
+
+        let query = format!("
             SELECT 
                 COALESCE(SUM(inbound_count), 0)::BIGINT as total_in, 
                 COALESCE(SUM(outbound_count), 0)::BIGINT as total_out, 
                 COALESCE(SUM(blocked_count), 0)::BIGINT as total_blocked 
             FROM traffic_stats
-        ";
+            {}",
+            sql_condition
+        );
 
         let row = self.db_client
-            .query_one(query, &[])
+            .query_one(query.as_str(), &[])
             .await
             .map_err(|e| {
                 log::error!("Erreur lecture stats DB: {}", e);
@@ -348,7 +378,7 @@ impl FirewallService for MyFirewallService {
             total_inbound: total_in,
             total_outbound: total_out,
             total_blocked: total_blocked,
-            time_period: "Global (Historique complet)".to_string(),
+            time_period: period_label.to_string(),
         }))
     }
 }

@@ -9,6 +9,7 @@ service FirewallService {
     rpc ListRules (google.protobuf.Empty) returns (RuleListResponse); // Nouvelle RPC
     rpc CreateRule (CreateRuleRequest) returns (CreateRuleResponse);
     rpc DeleteRule (DeleteRuleRequest) returns (DeleteRuleResponse);
+    rpc GetTrafficStats (GetTrafficStatsRequest) returns (GetTrafficStatsResponse);
 }
 
 message FirewallStatus {
@@ -67,4 +68,15 @@ message DeleteRuleRequest {
 message DeleteRuleResponse {
     int32 delete_rule_id = 1; // L'ID de la règle nouvellement créée
     string message = 2;        // Message de statut, ex: "Règle créée avec succès"
+}
+
+message GetTrafficStatsRequest {
+    string time_range = 1; // ex: "24h", "1h", "all" (Optionnel)
+}
+
+message GetTrafficStatsResponse {
+    int64 total_inbound = 1;
+    int64 total_outbound = 2;
+    int64 total_blocked = 3;
+    string time_period = 4; // Pour afficher "Depuis le début" ou "Dernières 24h"
 }

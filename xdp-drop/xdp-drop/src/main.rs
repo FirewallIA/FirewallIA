@@ -28,7 +28,6 @@ pub mod google {
 }
 
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
-// CORRECTION 1 : Ajout des imports manquants (GetTrafficStatsRequest, GetTrafficStatsResponse)
 use crate::firewall::{
     CreateRuleRequest, CreateRuleResponse, DeleteRuleRequest, DeleteRuleResponse, FirewallStatus,
     RuleInfo, RuleListResponse, GetTrafficStatsRequest, GetTrafficStatsResponse
@@ -317,11 +316,11 @@ impl FirewallService for MyFirewallService {
         }))
     }
 
-    // CORRECTION 2 : 'sync' remplacé par 'async'
+    
     async fn get_traffic_stats(
         &self,
         request: Request<GetTrafficStatsRequest>,
-            ) -> Result<Response<GetTrafficStatsResponse>, tonic::Status> {
+    ) -> Result<Response<GetTrafficStatsResponse>, tonic::Status> {
         let req = request.into_inner();
         info!("gRPC: Demande de statistiques reçue (Range: {:?})", req.time_range);
 

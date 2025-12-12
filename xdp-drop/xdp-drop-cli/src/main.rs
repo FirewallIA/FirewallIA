@@ -139,7 +139,7 @@ async fn handle_delete_rule(
     Ok(())
 }
 
-sync fn handle_get_stats(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
+async fn handle_get_stats(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
     // On peut laisser time_range vide pour l'instant
     let request = tonic::Request::new(firewall::GetTrafficStatsRequest {
         time_range: "all".to_string(),

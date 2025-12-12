@@ -415,6 +415,7 @@ impl FirewallService for MyFirewallService {
     }))
 }
 
+}
 // Fonction pour récolter les stats et les envoyer en DB
 async fn collect_and_store_stats(
     // On passe la map eBPF

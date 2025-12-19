@@ -154,14 +154,14 @@ range_arg: String
 
     let response = client.get_traffic_stats(request).await?.into_inner();
 
-    println!("\n📊  STATISTIQUES DU TRAFIC RÉSEAU");
+    println!("\n  STATISTIQUES DU TRAFIC RÉSEAU");
     println!("-----------------------------------");
     println!("Période : {}", response.time_period);
     println!("-----------------------------------");
     // Formatage avec des séparateurs de milliers pour la lisibilité (optionnel mais sympa)
-    println!("🟢  Total Entrant (Inbound)  : {:>10} paquets", response.total_inbound);
-    println!("🔵  Total Sortant (Outbound) : {:>10} paquets", response.total_outbound);
-    println!("🔴  Total Bloqué (Blocked)   : {:>10} paquets", response.total_blocked);
+    println!("  Total Entrant (Inbound)  : {:>10} paquets", response.total_inbound);
+    println!("  Total Sortant (Outbound) : {:>10} paquets", response.total_outbound);
+    println!("  Total Bloqué (Blocked)   : {:>10} paquets", response.total_blocked);
     println!("-----------------------------------");
     
     // Petit calcul de pourcentage de blocage

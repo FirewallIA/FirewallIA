@@ -482,7 +482,7 @@ async fn collect_and_store_stats(
             ).await;
 
             match res {
-                Ok(_) => log::info!("📊 Stats saved: In +{} | Out +{} | Blocked +{}", delta_inbound, delta_outbound, delta_blocked),
+                Ok(_) => log::info!(" Stats saved: In +{} | Out +{} | Blocked +{}", delta_inbound, delta_outbound, delta_blocked),
                 Err(e) => log::error!("Erreur insertion stats DB: {}", e),
             }
         }
@@ -615,7 +615,7 @@ async fn main() -> Result<(), anyhow::Error> {
         collect_and_store_stats(stats_map, db_client_for_stats).await;
     });
 
-    info!("📊 Module de statistiques démarré.");
+    info!("Module de statistiques démarré.");
 
     // ================== FIN AJOUT STATS ==================
 

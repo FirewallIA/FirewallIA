@@ -29,7 +29,6 @@ pub mod google {
 }
 
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
-// --- CORRECTION 1 : Ajout des imports UpdateRuleRequest et UpdateRuleResponse ---
 use crate::firewall::{
     CreateRuleRequest, CreateRuleResponse, DeleteRuleRequest, DeleteRuleResponse, FirewallStatus,
     RuleInfo, RuleListResponse, GetTrafficStatsRequest, GetTrafficStatsResponse, 

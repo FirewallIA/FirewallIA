@@ -10,6 +10,7 @@ service FirewallService {
     rpc CreateRule (CreateRuleRequest) returns (CreateRuleResponse);
     rpc DeleteRule (DeleteRuleRequest) returns (DeleteRuleResponse);
     rpc GetTrafficStats (GetTrafficStatsRequest) returns (GetTrafficStatsResponse);
+    rpc UpdateRule (UpdateRuleRequest) returns (UpdateRuleResponse);
 }
 
 message FirewallStatus {
@@ -69,6 +70,17 @@ message DeleteRuleResponse {
     int32 delete_rule_id = 1; // L'ID de la règle nouvellement créée
     string message = 2;        // Message de statut, ex: "Règle créée avec succès"
 }
+
+message UpdateRuleRequest {
+    int32 id = 1;
+    RuleData rule = 2;
+}
+
+message UpdateRuleResponse {
+    bool success = 1;
+    string message = 2;
+}
+
 
 message GetTrafficStatsRequest {
     string time_range = 1; // ex: "24h", "1h", "all" (Optionnel)

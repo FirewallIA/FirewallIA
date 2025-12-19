@@ -12,7 +12,9 @@ pub mod google {
 
 // Importer les types nécessaires
 use firewall::firewall_service_client::FirewallServiceClient;
-use firewall::{RuleInfo, RuleListResponse, RuleData, CreateRuleRequest, CreateRuleResponse,DeleteRuleRequest, DeleteRuleResponse, RuleDataDelete}; // Importer les nouveaux types
+use firewall::{RuleInfo, RuleListResponse, RuleData, CreateRuleRequest, CreateRuleResponse,
+    DeleteRuleRequest, DeleteRuleResponse, RuleDataDelete, UpdateRuleRequest, 
+    GetTrafficStatsRequest}; 
 use google::protobuf::Empty;
 use clap::Parser;
 
@@ -53,6 +55,16 @@ enum Commands {
     DeleteRule { // Nouvelle sous-commande
         #[clap(long)]
         id: i32,
+    },
+    UpdateRule { 
+        #[clap(long)] id: i32, // L'ID est obligatoire pour savoir quoi modifier
+        #[clap(long)] name: String,     
+        #[clap(long)] source_ip: String,
+        #[clap(long)] dest_ip: String,
+        #[clap(long, default_value = "*")] source_port: String,
+        #[clap(long, default_value = "*")] dest_port: String,
+        #[clap(long)] action: String,
+        #[clap(long, default_value = "any")] protocol: String,
     },
     TrafficStats {
     /// Période d'analyse : "5m", "1h", "4h", "24h", "1w" ou "all"
@@ -143,6 +155,26 @@ async fn handle_delete_rule(
     }
     Ok(())
 }
+async fn handle_update_rule(
+    client: &mut FirewallServiceClient<tonic::transport::Channel>,
+    id: i32,
+    rule_data: RuleData,
+) -> anyhow::Result<()> {
+    let request_payload = UpdateRuleRequest {
+        id,
+        rule: Some(rule_data),
+    };
+    let request = tonic::Request::new(request_payload);
+
+    let response = client.update_rule(request).await?.into_inner();
+
+    if response.success {
+        println!("Succès : {}", response.message);
+    } else {
+        println!("Échec : {}", response.message);
+    }
+    Ok(())
+}
 
 async fn handle_get_stats(client: &mut FirewallServiceClient<tonic::transport::Channel>,
 range_arg: String
@@ -217,6 +249,12 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
         }
         Commands::DeleteRule { id } => { // Gérer la nouvelle commande
             handle_delete_rule(&mut client, id).await?;
+        },
+        Commands::UpdateRule { id, name, source_ip, dest_ip, source_port, dest_port, action, protocol } => {
+            let rule_data = firewall::RuleData {
+                name, source_ip, dest_ip, source_port, dest_port, action, protocol,
+            };
+            handle_update_rule(&mut client, id, rule_data).await?;
         },
         Commands::TrafficStats { range } => {
         handle_get_stats(&mut client, range).await?;

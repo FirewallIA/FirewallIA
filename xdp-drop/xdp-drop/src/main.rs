@@ -30,7 +30,7 @@ pub mod google {
 use crate::firewall::firewall_service_server::{FirewallService, FirewallServiceServer};
 use crate::firewall::{
     CreateRuleRequest, CreateRuleResponse, DeleteRuleRequest, DeleteRuleResponse, FirewallStatus,
-    RuleInfo, RuleListResponse, GetTrafficStatsRequest, GetTrafficStatsResponse
+    RuleInfo, RuleListResponse, GetTrafficStatsRequest, GetTrafficStatsResponse,
 };
 use crate::google::protobuf::Empty;
 
@@ -315,6 +315,130 @@ impl FirewallService for MyFirewallService {
             message: format!("Règle ID {} supprimée avec succès.", rule_id_to_delete),
         }))
     }
+    
+     async fn update_rule(
+        &self,
+        request: Request<UpdateRuleRequest>,
+    ) -> Result<Response<UpdateRuleResponse>, tonic::Status> {
+        let req_data = request.into_inner();
+        let rule_id = req_data.id;
+        
+        let new_rule_data = req_data
+            .rule
+            .ok_or_else(|| tonic::Status::invalid_argument("Données de la règle manquantes"))?;
+
+        // 1. Validation basique (idem que Create)
+        if new_rule_data.source_ip.is_empty() || new_rule_data.dest_ip.is_empty() {
+            return Err(tonic::Status::invalid_argument("Les IPs ne peuvent pas être vides"));
+        }
+        let action_str = new_rule_data.action.to_lowercase();
+        if action_str != "allow" && action_str != "deny" {
+            return Err(tonic::Status::invalid_argument("Action invalide (allow/deny)"));
+        }
+
+        // --- ÉTAPE A : Récupérer l'ancienne règle pour nettoyer eBPF ---
+        // On a besoin des ANCIENNES valeurs pour calculer la clé de la map à supprimer
+        let row_old = self.db_client
+            .query_opt("SELECT source_ip, dest_ip, dest_port, protocol FROM rules WHERE id = $1", &[&rule_id])
+            .await
+            .map_err(|e| tonic::Status::internal(format!("Erreur DB lecture: {}", e)))?;
+
+        let row_old = match row_old {
+            Some(r) => r,
+            None => return Err(tonic::Status::not_found(format!("Règle ID {} introuvable", rule_id))),
+        };
+
+        let old_src_ip: String = row_old.get("source_ip");
+        let old_dest_ip: String = row_old.get("dest_ip");
+        let old_dest_port: Option<i32> = row_old.get("dest_port");
+        let old_protocol: Option<String> = row_old.get("protocol");
+
+        // --- ÉTAPE B : Suppression de l'ancienne entrée dans eBPF ---
+        // (Logique identique à delete_rule)
+        let old_ip_src = if old_src_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { old_src_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+        let old_ip_dst = if old_dest_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { old_dest_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+        
+        let old_key = IpPort {
+            addr: u32::from(old_ip_src).to_be(),
+            addr_dest: u32::from(old_ip_dst).to_be(),
+            port: (old_dest_port.unwrap_or(0) as u16).to_be(),
+            protocol: protocol_to_u8(&old_protocol),
+            _pad: 0,
+        };
+
+        {
+            let mut map = self.blocklist.lock().await;
+            if map.remove(&old_key).is_ok() {
+                info!("🔄 Update (1/2): Ancienne règle eBPF supprimée");
+            } else {
+                warn!("⚠️ Update (1/2): Ancienne règle introuvable dans eBPF, continuation...");
+            }
+        }
+
+        // --- ÉTAPE C : Mise à jour en Base de Données ---
+        // Préparation des nouvelles données
+        let new_src_port_db: Option<i32> = new_rule_data.source_port.parse().ok();
+        let new_dest_port_db: Option<i32> = new_rule_data.dest_port.parse().ok();
+        let new_dest_port_u16 = new_dest_port_db.unwrap_or(0) as u16;
+
+        let update_query = "
+            UPDATE rules 
+            SET name=$1, source_ip=$2, dest_ip=$3, source_port=$4, dest_port=$5, action=$6, protocol=$7
+            WHERE id=$8
+        ";
+        
+        let rows_affected = self.db_client.execute(
+            update_query,
+            &[
+                &new_rule_data.name,
+                &new_rule_data.source_ip,
+                &new_rule_data.dest_ip,
+                &new_src_port_db,
+                &new_dest_port_db,
+                &action_str,
+                &new_rule_data.protocol.to_uppercase(),
+                &rule_id
+            ]
+        ).await.map_err(|e| tonic::Status::internal(format!("Erreur update DB: {}", e)))?;
+
+        if rows_affected == 0 {
+             return Err(tonic::Status::not_found("Impossible de mettre à jour la DB (ID introuvable ?)"));
+        }
+
+        // --- ÉTAPE D : Insertion de la nouvelle règle dans eBPF ---
+        // (Logique identique à create_rule)
+        let new_ip_src = if new_rule_data.source_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { new_rule_data.source_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+        let new_ip_dst = if new_rule_data.dest_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { new_rule_data.dest_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+
+        let new_key = IpPort {
+            addr: u32::from(new_ip_src).to_be(),
+            addr_dest: u32::from(new_ip_dst).to_be(),
+            port: new_dest_port_u16.to_be(),
+            protocol: protocol_to_u8(&Some(new_rule_data.protocol.clone())),
+            _pad: 0,
+        };
+
+        const ACTION_DENY: u32 = 1;
+        const ACTION_ALLOW: u32 = 2;
+        let action_value = if action_str == "deny" { ACTION_DENY } else { ACTION_ALLOW };
+
+        {
+            let mut map = self.blocklist.lock().await;
+            match map.insert(new_key, action_value, 0) {
+                Ok(_) => info!("Update (2/2): Nouvelle règle eBPF ajoutée"),
+                Err(e) => log::error!("Update CRITIQUE: Échec insertion eBPF: {}", e),
+            }
+        }
+
+        info!("Règle ID {} mise à jour avec succès", rule_id);
+
+        Ok(Response::new(UpdateRuleResponse {
+            success: true,
+            message: "Règle mise à jour avec succès".to_string(),
+        }))
+    }
+}
+
 
     
     async fn get_traffic_stats(

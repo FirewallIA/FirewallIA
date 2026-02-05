@@ -16,7 +16,7 @@ use network_types::{
     tcp::TcpHdr,
     udp::UdpHdr,
 };
-use xdp_drop_common::{IpPort,PROTO_ANY, PROTO_ICMP, PROTO_TCP, PROTO_UDP}; // Import your shared struct
+use xdp_drop_common::{IpPort, PROTO_ANY}; // Import your shared struct
 use aya_ebpf::maps::PerCpuArray;
 use xdp_drop_common::{STAT_INBOUND, STAT_OUTBOUND, STAT_BLOCKED, STAT_TOTAL_TYPES};
 
@@ -111,6 +111,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_exact) {
+        // Optionnel : logger aussi les correspondances exactes si besoin, 
+        // mais souvent on évite pour ne pas spammer si le trafic est légitime et dense.
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
@@ -123,7 +125,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_exact_port_any) {
-        info!(&ctx, "MATCH IP exact / Port ANY");
+        info!(&ctx, "MATCH RULE | Type: IP Exact/Port ANY | Action: {} | SRC: {:i} -> DST: {:i}", 
+            action, source_ip_be, dest_ip_be);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
@@ -136,7 +139,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_src_anydest) {
-        info!(&ctx, "MATCH Src exact / Dest ANY / Port exact");
+        info!(&ctx, "MATCH RULE | Type: Src Exact/Port Exact | Action: {} | SRC: {:i} -> DST: *:{}", 
+            action, source_ip_be, u16::from_be(dest_port_be));
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
@@ -149,7 +153,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_src_anydest_port_any) {
-        info!(&ctx, "MATCH Src exact / Dest ANY / Port ANY");
+        info!(&ctx, "MATCH RULE | Type: Src Exact/Port ANY | Action: {} | SRC: {:i} -> DST: *:*", 
+            action, source_ip_be);
        return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
@@ -162,7 +167,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_anysrc_dest) {
-        info!(&ctx, "MATCH Src ANY / Dest exact / Port exact");
+        info!(&ctx, "MATCH RULE | Type: Dst Exact/Port Exact | Action: {} | SRC: * -> DST: {:i}:{}", 
+            action, dest_ip_be, u16::from_be(dest_port_be));
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
     
@@ -177,9 +183,11 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
 
     if let Some(action) = check_firewall_rule(&key_check_source_port) {
         // IMPORTANT : On n'accepte le retour QUE si l'action est ALLOW.
-        // Si c'est DENY, on laisse couler vers les règles suivantes (ou on bloque direct).
         if action == ACTION_ALLOW_FROM_MAP {
-             info!(&ctx, "✅ TRAFIC RETOUR AUTORISÉ (Port Source: {})", u16::from_be(source_port_be));
+             // LOG MODIFIÉ ICI
+             info!(&ctx, "RETURN ALLOW | SRC: {:i}:{} -> DST: {:i}:{}", 
+                source_ip_be, u16::from_be(source_port_be), 
+                dest_ip_be, u16::from_be(dest_port_be));
              return Ok(verdict(action, source_ip_be, dest_ip_be));
         }
     }
@@ -195,7 +203,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_anysrc_dest_port_any) {
-        info!(&ctx, "MATCH Src ANY / Dest exact / Port ANY");
+        info!(&ctx, "MATCH RULE | Type: Dst Exact/Port ANY | Action: {} | SRC: * -> DST: {:i}:*", 
+            action, dest_ip_be);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
@@ -208,7 +217,8 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_any_any) {
-        info!(&ctx, "MATCH Global Port: Port {}", u16::from_be(dest_port_be));
+        info!(&ctx, "MATCH RULE | Type: Global Port | Action: {} | Port: {}", 
+            action, u16::from_be(dest_port_be));
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
@@ -221,16 +231,14 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_any_any_port_any) {
-        info!(&ctx, "MATCH BLOCK ALL (Proto exact)");
+        info!(&ctx, "MATCH RULE | Type: Block All Proto | Action: {} | Proto: {}", 
+            action, protocol);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
     // ---------- Protocol = ANY checks (PROTO_ANY) ----------
-    
-    // ... Tes autres checks PROTO_ANY ...
 
     // (ANY src, ANY dest) - port ANY - proto ANY
-    // C'EST CETTE RÈGLE QUI BLOQUAIT TOUT (ID 20)
     let key_any_any_anyproto_port_any = IpPort {
         addr: IP_ANY_BE,
         addr_dest: IP_ANY_BE,
@@ -239,11 +247,9 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _pad: 0,
     };
     if let Some(action) = check_firewall_rule(&key_any_any_anyproto_port_any) {
-        info!(&ctx, "MATCH (PROTO_ANY, all ANY) - BLOCK ALL");
+        info!(&ctx, "MATCH RULE | Type: Default (All) | Action: {}", action);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
-
-
 
     // Default PASS if no rule matched
     let src_is_priv = is_private_ip(source_ip_be);
@@ -260,9 +266,6 @@ fn is_private_ip(ip: u32) -> bool {
     // 172.16.0.0/12  -> 0xAC10... - 0xAC1F...
     // 192.168.0.0/16 -> 0xC0A8...
     
-    // Note: ip est en Network Byte Order (Big Endian).
-    // On peut utiliser u32::from_be(ip) pour comparer avec des entiers lisibles, 
-    // ou comparer directement les octets. Convertissons pour la lisibilité.
     let ip_host = u32::from_be(ip);
 
     if (ip_host & 0xFF000000) == 0x0A000000 { return true; } // 10.x.x.x
@@ -298,9 +301,6 @@ fn verdict(action: u32, src_ip: u32, dst_ip: u32) -> u32 {
     else if src_is_priv && !dst_is_priv {
         increment_stat(STAT_OUTBOUND);
     }
-    // Privé -> Privé (LAN) ou Public -> Public (Routing?) 
-    // Tu peux décider de ne pas compter ou de compter comme inbound/outbound selon ta préférence.
     
     xdp_action::XDP_PASS
 }
-

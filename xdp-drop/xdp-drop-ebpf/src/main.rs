@@ -232,7 +232,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
     };
     if let Some(action) = check_firewall_rule(&key_any_any_port_any) {
         info!(&ctx, "MATCH RULE | Type: Block All Proto | Action: {} | Proto: {}", 
-            action, protocol);
+            action, protocol as u8); 
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 

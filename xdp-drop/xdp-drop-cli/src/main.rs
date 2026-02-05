@@ -18,6 +18,8 @@ use firewall::{RuleInfo, RuleListResponse, RuleData, CreateRuleRequest, CreateRu
 use google::protobuf::Empty;
 use clap::Parser;
 
+use tonic::transport::Channel;
+
 /// Une CLI simple pour interagir avec le service Firewall gRPC
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -71,6 +73,7 @@ enum Commands {
         #[clap(default_value = "all")]
         range: String,
     },
+    Logs,
 
 }
 
@@ -207,6 +210,24 @@ range_arg: String
     Ok(())
 }
 
+
+async fn handle_watch_logs(client: &mut FirewallServiceClient<Channel>) -> anyhow::Result<()> {
+    println!("🔌 Connexion au flux de logs du firewall... (Ctrl-C pour quitter)");
+
+    let request = tonic::Request::new(Empty {});
+    // On récupère le flux (stream)
+    let mut stream = client.watch_logs(request).await?.into_inner();
+
+    // Boucle infinie tant que le serveur envoie des données
+    while let Some(log) = stream.message().await? {
+        // Tu peux ajouter des couleurs ici selon le "level" si tu veux
+        println!("[{}] [{}] {}", log.timestamp, log.level, log.message);
+    }
+
+    println!("❌ Le flux a été coupé par le serveur.");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
     let cli = Cli::parse();
@@ -258,6 +279,9 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
         },
         Commands::TrafficStats { range } => {
         handle_get_stats(&mut client, range).await?;
+        },
+        Commands::Logs => {
+            handle_watch_logs(&mut client).await?;
         },
     }
 

@@ -18,6 +18,10 @@ use xdp_drop_common::{IpPort, PROTO_ANY, PROTO_ICMP, PROTO_TCP, PROTO_UDP};
 use xdp_drop_common::{STAT_INBOUND, STAT_OUTBOUND, STAT_BLOCKED};
 use std::time::SystemTime;
 
+use tokio::sync::broadcast;
+use tokio_stream::wrappers::ReceiverStream;
+use crate::firewall::LogEntry;
+
 // modules firewall et google
 pub mod firewall {
     tonic::include_proto!("firewall");
@@ -68,6 +72,7 @@ fn validate_args(opt: &Opt) {
 pub struct MyFirewallService {
     db_client: Arc<tokio_postgres::Client>,
     blocklist: Arc<tokio::sync::Mutex<HashMap<aya::maps::MapData, IpPort, u32>>>,
+    log_tx: broadcast::Sender<LogEntry>,
 }
 
 async fn fetch_and_format_rules_from_db(
@@ -475,6 +480,32 @@ impl FirewallService for MyFirewallService {
             chart_data: chart_data_vec,
         }))
     }
+
+
+
+     // --- Implémentation de la fonction watch_logs ---
+    async fn watch_logs(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<Self::WatchLogsStream>, tonic::Status> {
+        info!("gRPC: Nouveau client connecté au flux de logs");
+
+        // On crée un abonné (subscriber) au canal broadcast
+        let mut rx = self.log_tx.subscribe();
+        
+        // On crée un canal mpsc pour le stream gRPC
+        let (tx, rx_stream) = tokio::sync::mpsc::channel(4);
+
+        tokio::spawn(async move {
+            while let Ok(log_entry) = rx.recv().await {
+                if tx.send(Ok(log_entry)).await.is_err() {
+                    break; // Le client s'est déconnecté
+                }
+            }
+        });
+
+        Ok(Response::new(ReceiverStream::new(rx_stream)))
+    }
 }
 
 // Fonction pour récolter les stats et les envoyer en DB
@@ -590,6 +621,8 @@ async fn main() -> Result<(), anyhow::Error> {
     tokio::spawn(async move {
         collect_and_store_stats(stats_map, db_client_for_stats).await;
     });
+
+    let (log_tx, _log_rx) = broadcast::channel(100);
 
     let firewall_service = MyFirewallService {
         db_client: Arc::clone(&pg_client),

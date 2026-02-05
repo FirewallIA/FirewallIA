@@ -11,6 +11,7 @@ service FirewallService {
     rpc DeleteRule (DeleteRuleRequest) returns (DeleteRuleResponse);
     rpc GetTrafficStats (GetTrafficStatsRequest) returns (GetTrafficStatsResponse);
     rpc UpdateRule (UpdateRuleRequest) returns (UpdateRuleResponse);
+    rpc WatchLogs (google.protobuf.Empty) returns (stream LogEntry);    
 }
 
 message FirewallStatus {
@@ -100,4 +101,10 @@ message TrafficPoint {
     int64 inbound = 2;
     int64 outbound = 3;
     int64 blocked = 4;
+}
+
+message LogEntry {
+    string message = 1;
+    string level = 2; // "INFO", "WARN", "ERROR"
+    string timestamp = 3;
 }

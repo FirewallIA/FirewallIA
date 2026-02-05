@@ -125,6 +125,9 @@ impl FirewallService for MyFirewallService {
         }))
     }
 
+    type WatchLogsStream = ReceiverStream<Result<LogEntry, tonic::Status>>;
+
+
     async fn list_rules(
         &self,
         _request: Request<Empty>,
@@ -622,11 +625,12 @@ async fn main() -> Result<(), anyhow::Error> {
         collect_and_store_stats(stats_map, db_client_for_stats).await;
     });
 
-    let (log_tx, _log_rx) = broadcast::channel(100);
+   let (log_tx, _rx) = tokio::sync::broadcast::channel(100);
 
     let firewall_service = MyFirewallService {
         db_client: Arc::clone(&pg_client),
         blocklist: Arc::clone(&blocklist),
+        log_tx,
     };
 
     let grpc_addr = "[::1]:50051".parse()?;

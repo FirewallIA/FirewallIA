@@ -2,7 +2,7 @@
 
 // Structure partagée entre eBPF (Kernel) et Userspace
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct PacketLog {
     pub ipv4_src: u32,
     pub ipv4_dst: u32,
@@ -26,7 +26,7 @@ pub const STAT_TOTAL_TYPES: u32 = 3;
 
 // Clé pour la Map de règles
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct IpPort {
     pub addr: u32,      // IP Source
     pub addr_dest: u32, // IP Dest

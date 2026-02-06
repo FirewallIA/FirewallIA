@@ -202,10 +202,18 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
 
     if let Some(action) = check_firewall_rule(&key_check_source_port) {
         // IMPORTANT : On n'accepte le retour QUE si l'action est ALLOW.
-        if action == ACTION_ALLOW_FROM_MAP {
-             // LOG MODIFIÉ ICI
-             log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
-        }
+        log_event(
+            &ctx, 
+            source_ip_be, 
+            dest_ip_be, 
+            u16::from_be(source_port_be), 
+            u16::from_be(dest_port_be), 
+            protocol as u32, 
+            action
+        );
+
+        // On applique immédiatement le verdict (si c'est DENY ça drop, si c'est ALLOW ça passe)
+        return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
     // =========================================================================
 

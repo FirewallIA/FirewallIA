@@ -631,7 +631,7 @@ async fn main() -> Result<(), anyhow::Error> {
     });
 
    let (log_tx, _rx) = tokio::sync::broadcast::channel(100);
-   
+
    let events_map = bpf.take_map("EVENTS").ok_or_else(|| anyhow::anyhow!("Map EVENTS introuvable"))?;
     
     // 2. Initialisation de l'array d'événements asynchrones
@@ -641,7 +641,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let log_tx_for_events = log_tx.clone();
 
     // 4. On boucle sur chaque CPU pour écouter les événements noyau
-    for cpu_id in online_cpus().map_err(|e| anyhow::anyhow!("Erreur CPU: {}", e))? {
+    for cpu_id in online_cpus().map_err(|e| anyhow::anyhow!("Erreur CPU: {:?}", e))? {
         let mut buf = events.open(cpu_id, None)?;
         let tx = log_tx_for_events.clone(); // Clone pour ce thread spécifique
 

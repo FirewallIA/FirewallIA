@@ -22,6 +22,11 @@ use tokio::sync::broadcast;
 use tokio_stream::wrappers::ReceiverStream;
 use crate::firewall::LogEntry;
 
+use aya::maps::perf::AsyncPerfEventArray;
+use xdp_drop_common::PacketLog;
+use aya::util::online_cpus;
+use bytes::BytesMut;
+
 // modules firewall et google
 pub mod firewall {
     tonic::include_proto!("firewall");
@@ -626,7 +631,66 @@ async fn main() -> Result<(), anyhow::Error> {
     });
 
    let (log_tx, _rx) = tokio::sync::broadcast::channel(100);
+   
+   let events_map = bpf.take_map("EVENTS").ok_or_else(|| anyhow::anyhow!("Map EVENTS introuvable"))?;
+    
+    // 2. Initialisation de l'array d'événements asynchrones
+    let mut events: AsyncPerfEventArray<_> = AsyncPerfEventArray::try_from(events_map)?;
 
+    // 3. On clone le transmetteur pour le donner à la tâche asynchrone
+    let log_tx_for_events = log_tx.clone();
+
+    // 4. On boucle sur chaque CPU pour écouter les événements noyau
+    for cpu_id in online_cpus().map_err(|e| anyhow::anyhow!("Erreur CPU: {}", e))? {
+        let mut buf = events.open(cpu_id, None)?;
+        let tx = log_tx_for_events.clone(); // Clone pour ce thread spécifique
+
+        tokio::spawn(async move {
+            // Tampon pour stocker les données brutes
+            // On prépare 10 buffers de 1024 octets (suffisant pour PacketLog)
+            let mut buffers = (0..10).map(|_| BytesMut::with_capacity(1024)).collect::<Vec<_>>();
+
+            loop {
+                // Attente des événements
+                let events = buf.read_events(&mut buffers).await.unwrap();
+                
+                // Lecture de chaque événement reçu
+                for i in 0..events.read {
+                    let buf = &mut buffers[i];
+                    let ptr = buf.as_ptr() as *const PacketLog;
+                    // Lecture non alignée car venant du buffer brut
+                    let data = unsafe { ptr.read_unaligned() };
+
+                    // Formatage des données pour l'humain
+                    let src_ip = Ipv4Addr::from(u32::from_be(data.ipv4_src));
+                    let dst_ip = Ipv4Addr::from(u32::from_be(data.ipv4_dst));
+                    
+                    let (action_str, level) = if data.action == 1 { 
+                        ("DENY", "WARN") 
+                    } else { 
+                        ("ALLOW", "INFO") 
+                    };
+
+                    // Création du message texte
+                    let msg = format!(
+                        "TRAFFIC {} | Proto: {} | {}:{} -> {}:{}",
+                        action_str,
+                        data.protocol,
+                        src_ip, data.port_src,
+                        dst_ip, data.port_dst
+                    );
+
+                    // Envoi dans le canal gRPC
+                    // On ignore l'erreur si personne n'écoute (send error)
+                    let _ = tx.send(LogEntry {
+                        message: msg,
+                        level: level.to_string(),
+                        timestamp: format!("{:?}", SystemTime::now()),
+                    });
+                }
+            }
+        });
+    }
     let firewall_service = MyFirewallService {
         db_client: Arc::clone(&pg_client),
         blocklist: Arc::clone(&blocklist),

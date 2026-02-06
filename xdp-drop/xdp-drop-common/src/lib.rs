@@ -52,3 +52,5 @@ pub const STAT_BLOCKED: u32 = 2;
 pub const STAT_TOTAL_TYPES: u32 = 3; // Taille du tableau
 
 // --- Autres définitions partagées si nécessaire ---
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for PacketLog {}

@@ -19,7 +19,8 @@ use network_types::{
 use xdp_drop_common::{IpPort, PROTO_ANY}; // Import your shared struct
 use aya_ebpf::maps::PerCpuArray;
 use xdp_drop_common::{STAT_INBOUND, STAT_OUTBOUND, STAT_BLOCKED, STAT_TOTAL_TYPES};
-
+use xdp_drop_common::PacketLog;
+use aya_ebpf::maps::PerfEventArray;
 
 // Panic handler (required for no_std)
 #[cfg(not(test))]
@@ -37,6 +38,9 @@ static BLOCKLIST: HashMap<IpPort, u32> = HashMap::<IpPort, u32>::with_max_entrie
 #[map]
 static TRAFFIC_STATS: PerCpuArray<u64> = PerCpuArray::with_max_entries(STAT_TOTAL_TYPES, 0);
 
+
+#[map]
+static EVENTS: PerfEventArray<PacketLog> = PerfEventArray::with_max_entries(1024, 0);
 // Action constants (must match userspace definitions)
 const ACTION_DENY_FROM_MAP: u32 = 1;
 const ACTION_ALLOW_FROM_MAP: u32 = 2;
@@ -48,6 +52,21 @@ pub fn xdp_firewall(ctx: XdpContext) -> u32 {
         Ok(ret) => ret,
         Err(_) => xdp_action::XDP_ABORTED, // Abort on error (e.g., out-of-bounds access)
     }
+}
+
+
+#[inline(always)]
+fn log_event(ctx: &XdpContext, src: u32, dst: u32, p_src: u16, p_dst: u16, proto: u32, action: u32) {
+    let log_entry = PacketLog {
+        ipv4_src: src,
+        ipv4_dst: dst,
+        port_src: p_src,
+        port_dst: p_dst,
+        protocol: proto,
+        action: action,
+    };
+    // On envoie l'événement au Userspace
+    unsafe { EVENTS.output(ctx, &log_entry, 0) };
 }
 
 // Helper to safely get a pointer to data in the packet.
@@ -185,10 +204,7 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         // IMPORTANT : On n'accepte le retour QUE si l'action est ALLOW.
         if action == ACTION_ALLOW_FROM_MAP {
              // LOG MODIFIÉ ICI
-             info!(&ctx, "RETURN ALLOW | SRC: {:i}:{} -> DST: {:i}:{}", 
-                source_ip_be, u16::from_be(source_port_be), 
-                dest_ip_be, u16::from_be(dest_port_be));
-             return Ok(verdict(action, source_ip_be, dest_ip_be));
+             log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
         }
     }
     // =========================================================================

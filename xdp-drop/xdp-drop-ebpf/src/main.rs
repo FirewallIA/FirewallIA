@@ -40,7 +40,7 @@ static TRAFFIC_STATS: PerCpuArray<u64> = PerCpuArray::with_max_entries(STAT_TOTA
 
 
 #[map]
-static EVENTS: PerfEventArray<PacketLog> = PerfEventArray::with_max_entries(1024, 0);
+static EVENTS: PerfEventArray<PacketLog> = PerfEventArray::new(0);
 // Action constants (must match userspace definitions)
 const ACTION_DENY_FROM_MAP: u32 = 1;
 const ACTION_ALLOW_FROM_MAP: u32 = 2;

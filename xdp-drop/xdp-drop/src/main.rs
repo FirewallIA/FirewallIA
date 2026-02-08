@@ -9,7 +9,7 @@ use aya::{
 use aya_log::EbpfLogger;
 use clap::{CommandFactory, Parser};
 use flexi_logger::{Duplicate, FileSpec, Logger};
-use log::{info, warn, error};
+use log::{info, warn};
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tokio::signal;
@@ -51,7 +51,7 @@ struct Opt {
     iface: String,
 }
 
-// Structure intermédiaire pour passer les logs au Worker DB
+
 #[derive(Debug)]
 struct DbLogMessage {
     timestamp: SystemTime,
@@ -63,7 +63,8 @@ struct DbLogMessage {
     action: String,
 }
 
-// Utilitaire pour convertir le protocole (String -> u8)
+
+// utilitaire pour convertir le protocole
 fn protocol_to_u8(protocol_str: &Option<String>) -> u8 {
     match protocol_str {
         Some(s) => match s.to_lowercase().as_str() {
@@ -74,16 +75,6 @@ fn protocol_to_u8(protocol_str: &Option<String>) -> u8 {
             _ => PROTO_ANY,
         },
         None => PROTO_ANY,
-    }
-}
-
-// Utilitaire pour récupérer le nom du protocole (u32 -> String)
-fn get_proto_name(proto: u32) -> String {
-    match proto {
-        6 => "TCP".to_string(),
-        17 => "UDP".to_string(),
-        1 => "ICMP".to_string(),
-        _ => format!("{}", proto),
     }
 }
 
@@ -115,16 +106,26 @@ async fn fetch_and_format_rules_from_db(
 
     let mut rule_infos = Vec::new();
     for row in rows {
+        let id: i32 = row.get("id");
+        let name_str: String = row.get("name");
+        let source_ip_str: String = row.get("source_ip");
+        let dest_ip_str: String = row.get("dest_ip");
+        let source_port_opt: Option<i32> = row.get("source_port");
+        let dest_port_opt: Option<i32> = row.get("dest_port");
+        let action_str: String = row.get("action");
+        let protocol_opt: Option<String> = row.get("protocol");
+        let usage_count_val: i32 = row.get("usage_count");
+
         rule_infos.push(RuleInfo {
-            id: row.get("id"),
-            name: row.get("name"),
-            source_ip: row.get("source_ip"),
-            dest_ip: row.get("dest_ip"),
-            source_port: row.get::<_, Option<i32>>("source_port").map_or("*".to_string(), |p| p.to_string()),
-            dest_port: row.get::<_, Option<i32>>("dest_port").map_or("*".to_string(), |p| p.to_string()),
-            action: row.get("action"),
-            protocol: row.get::<_, Option<String>>("protocol").unwrap_or_else(|| "any".to_string()),
-            usage_count: row.get("usage_count"),
+            id,
+            name: name_str,
+            source_ip: source_ip_str,
+            dest_ip: dest_ip_str,
+            source_port: source_port_opt.map_or("*".to_string(), |p| p.to_string()),
+            dest_port: dest_port_opt.map_or("*".to_string(), |p| p.to_string()),
+            action: action_str,
+            protocol: protocol_opt.unwrap_or_else(|| "any".to_string()),
+            usage_count: usage_count_val,
         });
     }
     Ok(rule_infos)
@@ -132,8 +133,6 @@ async fn fetch_and_format_rules_from_db(
 
 #[tonic::async_trait]
 impl FirewallService for MyFirewallService {
-    type WatchLogsStream = ReceiverStream<Result<LogEntry, tonic::Status>>;
-
     async fn get_status(
         &self,
         _request: Request<Empty>,
@@ -144,6 +143,9 @@ impl FirewallService for MyFirewallService {
         }))
     }
 
+    type WatchLogsStream = ReceiverStream<Result<LogEntry, tonic::Status>>;
+
+
     async fn list_rules(
         &self,
         _request: Request<Empty>,
@@ -153,7 +155,10 @@ impl FirewallService for MyFirewallService {
             Ok(rules) => Ok(Response::new(RuleListResponse { rules })),
             Err(e) => {
                 log::error!("Erreur lors de la récupération des règles pour gRPC: {}", e);
-                Err(tonic::Status::internal(format!("Échec: {}", e)))
+                Err(tonic::Status::internal(format!(
+                    "Échec de la récupération des règles: {}",
+                    e
+                )))
             }
         }
     }
@@ -167,31 +172,54 @@ impl FirewallService for MyFirewallService {
             .rule
             .ok_or_else(|| tonic::Status::invalid_argument("Données de règle manquantes"))?;
 
-        // 1. Validation
+        // --- 1. Validation des entrées ---
         if rule_to_create.source_ip.is_empty() || rule_to_create.dest_ip.is_empty() {
-            return Err(tonic::Status::invalid_argument("IPs requises"));
+            return Err(tonic::Status::invalid_argument(
+                "Les adresses IP source et destination ne peuvent pas être vides.",
+            ));
         }
         let action_str = rule_to_create.action.to_lowercase();
         if action_str != "allow" && action_str != "deny" {
-            return Err(tonic::Status::invalid_argument("Action invalide"));
+            return Err(tonic::Status::invalid_argument(
+                "Action invalide. Doit être 'allow' ou 'deny'.",
+            ));
         }
 
+        // Parsing des ports pour la DB (i32) et pour BPF (u16)
         let source_port_db: Option<i32> = rule_to_create.source_port.parse().ok();
         let dest_port_db: Option<i32> = rule_to_create.dest_port.parse().ok();
         let dest_port_u16 = dest_port_db.unwrap_or(0) as u16;
 
-        // 2. DB Insert
+        // --- 2. Insertion dans la Base de Données ---
         let created_rule_id: i32 = self.db_client.query_one(
             "INSERT INTO rules (name, source_ip, dest_ip, source_port, dest_port, action, protocol) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
             &[
-                &rule_to_create.name, &rule_to_create.source_ip, &rule_to_create.dest_ip,
-                &source_port_db, &dest_port_db, &action_str, &rule_to_create.protocol.to_uppercase()
+                &rule_to_create.name,        // $1
+                &rule_to_create.source_ip,   // $2
+                &rule_to_create.dest_ip,     // $3
+                &source_port_db,             // $4
+                &dest_port_db,               // $5
+                &action_str,                 // $6
+                &rule_to_create.protocol.to_uppercase() // $7
             ],
-        ).await.map_err(|e| tonic::Status::internal(format!("DB Error: {}", e)))?.get(0);
+        ).await.map_err(|e| {
+            log::error!("Erreur insertion DB: {}", e);
+            tonic::Status::internal(format!("Échec création règle DB: {}", e))
+        })?.get(0);
 
-        // 3. BPF Insert
-        let ip_src = if rule_to_create.source_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { rule_to_create.source_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
-        let ip_dst = if rule_to_create.dest_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { rule_to_create.dest_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+        // --- 3. MISE A JOUR A CHAUD DU BPF ---
+
+        let ip_src = if rule_to_create.source_ip.to_lowercase() == "any" {
+            Ipv4Addr::UNSPECIFIED
+        } else {
+            rule_to_create.source_ip.parse().map_err(|_| tonic::Status::invalid_argument("IP Source invalide"))?
+        };
+
+        let ip_dst = if rule_to_create.dest_ip.to_lowercase() == "any" {
+            Ipv4Addr::UNSPECIFIED
+        } else {
+            rule_to_create.dest_ip.parse().map_err(|_| tonic::Status::invalid_argument("IP Dest invalide"))?
+        };
 
         let key = IpPort {
             addr: u32::from(ip_src).to_be(),
@@ -205,16 +233,22 @@ impl FirewallService for MyFirewallService {
         const ACTION_ALLOW: u32 = 2;
         let action_value = if action_str == "deny" { ACTION_DENY } else { ACTION_ALLOW };
 
-        let _ = self.blocklist.lock().await.insert(key, action_value, 0);
+        match self.blocklist.lock().await.insert(key, action_value, 0) {
+            Ok(_) => info!("Règle ajoutée au noyau (Hot-Reload)"),
+            Err(e) => {
+                log::error!("CRITIQUE: Règle ajoutée en DB mais échec BPF: {}", e);
+            }
+        }
 
-        // Log
-        let msg = format!("✅ Règle créée [ID: {}] : {} -> {}", created_rule_id, rule_to_create.source_ip, rule_to_create.dest_ip);
-        info!("{}", msg);
-        let _ = self.log_tx.send(LogEntry { message: msg, level: "INFO".to_string(), timestamp: format!("{:?}", SystemTime::now()) });
+        info!(
+            "✅ Règle créée [ID: {} | Nom: {}] : {} -> {} | Port Dest: {} | Proto: {} | Action: {}",
+            created_rule_id, rule_to_create.name, rule_to_create.source_ip, rule_to_create.dest_ip,
+            dest_port_db.map_or("*".to_string(), |p| p.to_string()), rule_to_create.protocol, action_str
+        );
 
         Ok(Response::new(CreateRuleResponse {
             created_rule_id,
-            message: format!("Règle créée ID {}.", created_rule_id),
+            message: format!("Règle créée avec succès avec l'ID {}.", created_rule_id),
         }))
     }
 
@@ -223,11 +257,15 @@ impl FirewallService for MyFirewallService {
         request: Request<DeleteRuleRequest>,
     ) -> Result<Response<DeleteRuleResponse>, tonic::Status> {
         let req_data = request.into_inner();
-        let rule_id = req_data.rule.map(|r| r.id).ok_or_else(|| tonic::Status::invalid_argument("ID manquant"))?;
+        let rule_id_to_delete = req_data.rule.map(|r| r.id)
+            .ok_or_else(|| tonic::Status::invalid_argument("Données de suppression manquantes"))?;
 
-        let row = self.db_client.query_opt("SELECT source_ip, dest_ip, dest_port, protocol FROM rules WHERE id = $1", &[&rule_id])
-            .await.map_err(|e| tonic::Status::internal(format!("DB Error: {}", e)))?
-            .ok_or_else(|| tonic::Status::not_found("Règle non trouvée"))?;
+        let row_opt = self.db_client.query_opt("SELECT source_ip, dest_ip, dest_port, protocol FROM rules WHERE id = $1", &[&rule_id_to_delete]).await
+            .map_err(|e| tonic::Status::internal(format!("Erreur récupération règle: {}", e)))?;
+
+        let row = row_opt.ok_or_else(|| {
+            tonic::Status::not_found(format!("Règle ID {} non trouvée", rule_id_to_delete))
+        })?;
 
         let source_ip: String = row.get("source_ip");
         let dest_ip: String = row.get("dest_ip");
@@ -245,14 +283,24 @@ impl FirewallService for MyFirewallService {
             _pad: 0,
         };
 
-        let _ = self.blocklist.lock().await.remove(&key);
-        self.db_client.execute("DELETE FROM rules WHERE id = $1", &[&rule_id]).await.ok();
+        {
+            let mut map = self.blocklist.lock().await;
+            if map.remove(&key).is_ok() {
+                info!("Règle supprimée du noyau (Hot-Reload): {:?}", key);
+            } else {
+                warn!("Tentative de suppression BPF échouée (clé non trouvée ?): {:?}", key);
+            }
+        }
+        
+        self.db_client.execute("DELETE FROM rules WHERE id = $1", &[&rule_id_to_delete]).await
+            .map_err(|e| tonic::Status::internal(format!("Erreur suppression DB: {}", e)))?;
 
-        let msg = format!("🗑️ Règle supprimée [ID: {}]", rule_id);
-        info!("{}", msg);
-        let _ = self.log_tx.send(LogEntry { message: msg, level: "WARN".to_string(), timestamp: format!("{:?}", SystemTime::now()) });
+        info!("Règle supprimée [ID: {}] : {} -> {}", rule_id_to_delete, source_ip, dest_ip);
 
-        Ok(Response::new(DeleteRuleResponse { delete_rule_id: rule_id, message: "Supprimé".to_string() }))
+        Ok(Response::new(DeleteRuleResponse {
+            delete_rule_id: rule_id_to_delete,
+            message: format!("Règle ID {} supprimée avec succès.", rule_id_to_delete),
+        }))
     }
     
     async fn update_rule(
@@ -261,109 +309,219 @@ impl FirewallService for MyFirewallService {
     ) -> Result<Response<UpdateRuleResponse>, tonic::Status> {
         let req_data = request.into_inner();
         let rule_id = req_data.id;
-        let new_data = req_data.rule.ok_or(tonic::Status::invalid_argument("Données manquantes"))?;
-        let action_str = new_data.action.to_lowercase();
         
-        // Nettoyage ancien BPF
-        let row_old = self.db_client.query_opt("SELECT source_ip, dest_ip, dest_port, protocol FROM rules WHERE id = $1", &[&rule_id]).await.unwrap();
-        if let Some(r) = row_old {
-            let old_src: String = r.get("source_ip");
-            let old_dst: String = r.get("dest_ip");
-            let old_port: Option<i32> = r.get("dest_port");
-            let old_proto: Option<String> = r.get("protocol");
-            
-            let ip_src = if old_src.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { old_src.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
-            let ip_dst = if old_dst.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { old_dst.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+        let new_rule_data = req_data
+            .rule
+            .ok_or_else(|| tonic::Status::invalid_argument("Données de la règle manquantes"))?;
 
-            let key = IpPort {
-                addr: u32::from(ip_src).to_be(),
-                addr_dest: u32::from(ip_dst).to_be(),
-                port: (old_port.unwrap_or(0) as u16).to_be(),
-                protocol: protocol_to_u8(&old_proto),
-                _pad: 0,
-            };
-            let _ = self.blocklist.lock().await.remove(&key);
+        if new_rule_data.source_ip.is_empty() || new_rule_data.dest_ip.is_empty() {
+            return Err(tonic::Status::invalid_argument("Les IPs ne peuvent pas être vides"));
+        }
+        let action_str = new_rule_data.action.to_lowercase();
+        if action_str != "allow" && action_str != "deny" {
+            return Err(tonic::Status::invalid_argument("Action invalide (allow/deny)"));
         }
 
-        // Update DB
-        let src_p: Option<i32> = new_data.source_port.parse().ok();
-        let dst_p: Option<i32> = new_data.dest_port.parse().ok();
-        
-        self.db_client.execute(
-            "UPDATE rules SET name=$1, source_ip=$2, dest_ip=$3, source_port=$4, dest_port=$5, action=$6, protocol=$7 WHERE id=$8",
-            &[&new_data.name, &new_data.source_ip, &new_data.dest_ip, &src_p, &dst_p, &action_str, &new_data.protocol.to_uppercase(), &rule_id]
-        ).await.map_err(|e| tonic::Status::internal(format!("DB Error: {}", e)))?;
+        // --- ÉTAPE A : Récupérer l'ancienne règle ---
+        let row_old = self.db_client
+            .query_opt("SELECT source_ip, dest_ip, dest_port, protocol FROM rules WHERE id = $1", &[&rule_id])
+            .await
+            .map_err(|e| tonic::Status::internal(format!("Erreur DB lecture: {}", e)))?;
 
-        // Insert BPF
-        let ip_src = if new_data.source_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { new_data.source_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
-        let ip_dst = if new_data.dest_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { new_data.dest_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
-        let new_key = IpPort {
-            addr: u32::from(ip_src).to_be(),
-            addr_dest: u32::from(ip_dst).to_be(),
-            port: (dst_p.unwrap_or(0) as u16).to_be(),
-            protocol: protocol_to_u8(&Some(new_data.protocol.clone())),
+        let row_old = match row_old {
+            Some(r) => r,
+            None => return Err(tonic::Status::not_found(format!("Règle ID {} introuvable", rule_id))),
+        };
+
+        let old_src_ip: String = row_old.get("source_ip");
+        let old_dest_ip: String = row_old.get("dest_ip");
+        let old_dest_port: Option<i32> = row_old.get("dest_port");
+        let old_protocol: Option<String> = row_old.get("protocol");
+
+        // --- ÉTAPE B : Suppression eBPF ---
+        let old_ip_src = if old_src_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { old_src_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+        let old_ip_dst = if old_dest_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { old_dest_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+        
+        let old_key = IpPort {
+            addr: u32::from(old_ip_src).to_be(),
+            addr_dest: u32::from(old_ip_dst).to_be(),
+            port: (old_dest_port.unwrap_or(0) as u16).to_be(),
+            protocol: protocol_to_u8(&old_protocol),
             _pad: 0,
         };
-        let act_val = if action_str == "deny" { 1 } else { 2 };
-        let _ = self.blocklist.lock().await.insert(new_key, act_val, 0);
 
-        Ok(Response::new(UpdateRuleResponse { success: true, message: "Update OK".to_string() }))
+        {
+            let mut map = self.blocklist.lock().await;
+            if map.remove(&old_key).is_ok() {
+                info!("🔄 Update (1/2): Ancienne règle eBPF supprimée");
+            } else {
+                warn!("⚠️ Update (1/2): Ancienne règle introuvable dans eBPF, continuation...");
+            }
+        }
+
+        // --- ÉTAPE C : Mise à jour DB ---
+        let new_src_port_db: Option<i32> = new_rule_data.source_port.parse().ok();
+        let new_dest_port_db: Option<i32> = new_rule_data.dest_port.parse().ok();
+        let new_dest_port_u16 = new_dest_port_db.unwrap_or(0) as u16;
+
+        let update_query = "
+            UPDATE rules 
+            SET name=$1, source_ip=$2, dest_ip=$3, source_port=$4, dest_port=$5, action=$6, protocol=$7
+            WHERE id=$8
+        ";
+        
+        let rows_affected = self.db_client.execute(
+            update_query,
+            &[
+                &new_rule_data.name, &new_rule_data.source_ip, &new_rule_data.dest_ip,
+                &new_src_port_db, &new_dest_port_db, &action_str,
+                &new_rule_data.protocol.to_uppercase(), &rule_id
+            ]
+        ).await.map_err(|e| tonic::Status::internal(format!("Erreur update DB: {}", e)))?;
+
+        if rows_affected == 0 {
+             return Err(tonic::Status::not_found("Impossible de mettre à jour la DB (ID introuvable ?)"));
+        }
+
+        // --- ÉTAPE D : Insertion eBPF ---
+        let new_ip_src = if new_rule_data.source_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { new_rule_data.source_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+        let new_ip_dst = if new_rule_data.dest_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { new_rule_data.dest_ip.parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+
+        let new_key = IpPort {
+            addr: u32::from(new_ip_src).to_be(),
+            addr_dest: u32::from(new_ip_dst).to_be(),
+            port: new_dest_port_u16.to_be(),
+            protocol: protocol_to_u8(&Some(new_rule_data.protocol.clone())),
+            _pad: 0,
+        };
+
+        const ACTION_DENY: u32 = 1;
+        const ACTION_ALLOW: u32 = 2;
+        let action_value = if action_str == "deny" { ACTION_DENY } else { ACTION_ALLOW };
+
+        {
+            let mut map = self.blocklist.lock().await;
+            match map.insert(new_key, action_value, 0) {
+                Ok(_) => info!("Update (2/2): Nouvelle règle eBPF ajoutée"),
+                Err(e) => log::error!("Update CRITIQUE: Échec insertion eBPF: {}", e),
+            }
+        }
+
+        info!("Règle ID {} mise à jour avec succès", rule_id);
+
+        Ok(Response::new(UpdateRuleResponse {
+            success: true,
+            message: "Règle mise à jour avec succès".to_string(),
+        }))
     }
 
+    // --- CORRECTION 2 : get_traffic_stats est maintenant DANS le bloc impl ---
     async fn get_traffic_stats(
         &self,
         request: Request<GetTrafficStatsRequest>,
     ) -> Result<Response<GetTrafficStatsResponse>, tonic::Status> {
         let req = request.into_inner();
-        let range = req.time_range.trim().to_lowercase();
+        let range_input = req.time_range.trim().to_lowercase();
         
-        let (interval, bucket, label) = match range.as_str() {
+        info!("gRPC: Demande de stats (Range: '{}')", range_input);
+
+        let (sql_interval, bucket_size, period_label) = match range_input.as_str() {
             "5m" | "5min" => ("5 minutes", "minute", "5 dernières minutes"),
             "1h" | "1hour" => ("1 hour", "minute", "Dernière heure"),
-            "24h" | "day" => ("24 hours", "hour", "24h"),
-            _ => ("100 years", "day", "Global"), 
+            "4h" | "4hours" => ("4 hours", "minute", "4 dernières heures"),
+            "12h" | "12hours" => ("12 hours", "hour", "12 dernières heures"),
+            "24h" | "day" => ("24 hours", "hour", "Dernières 24 heures"),
+            "7d" | "1w" | "week" => ("1 week", "day", "Dernière semaine"),
+            "30d" | "month" => ("1 month", "day", "Dernier mois"),
+            _ => ("100 years", "day", "Global (Historique complet)"), 
         };
 
-        let row_totals = self.db_client.query_one(
-            &format!("SELECT COALESCE(SUM(inbound_count),0)::BIGINT as ti, COALESCE(SUM(outbound_count),0)::BIGINT as to, COALESCE(SUM(blocked_count),0)::BIGINT as tb FROM traffic_stats WHERE time > NOW() - INTERVAL '{}'", interval), 
-            &[]
-        ).await.map_err(|_| tonic::Status::internal("DB Error"))?;
+        let query_totals = format!(
+            "SELECT 
+                COALESCE(SUM(inbound_count), 0)::BIGINT as total_in, 
+                COALESCE(SUM(outbound_count), 0)::BIGINT as total_out, 
+                COALESCE(SUM(blocked_count), 0)::BIGINT as total_blocked 
+            FROM traffic_stats 
+            WHERE time > NOW() - INTERVAL '{}'",
+            sql_interval
+        );
 
-        let rows_chart = self.db_client.query(
-            &format!("WITH grid AS (SELECT generate_series(NOW() - INTERVAL '{}', NOW(), '1 {}'::interval) as bt) SELECT grid.bt, COALESCE(SUM(ts.inbound_count),0)::BIGINT as i, COALESCE(SUM(ts.outbound_count),0)::BIGINT as o, COALESCE(SUM(ts.blocked_count),0)::BIGINT as b FROM grid LEFT JOIN traffic_stats ts ON date_trunc('{}', ts.time) = date_trunc('{}', grid.bt) GROUP BY grid.bt ORDER BY grid.bt ASC", interval, bucket, bucket, bucket),
-            &[]
-        ).await.map_err(|_| tonic::Status::internal("DB Error"))?;
+        let row_totals = self.db_client.query_one(query_totals.as_str(), &[])
+            .await
+            .map_err(|e| {
+                log::error!("Erreur SQL Totals: {}", e);
+                tonic::Status::internal("Erreur DB")
+            })?;
 
-        let chart_data = rows_chart.iter().map(|r| {
-            let t: SystemTime = r.get("bt");
-            crate::firewall::TrafficPoint {
-                timestamp: t.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs() as i64,
-                inbound: r.get("i"),
-                outbound: r.get("o"),
-                blocked: r.get("b"),
-            }
-        }).collect();
+        let query_chart = format!(
+            "WITH grid AS (
+                SELECT generate_series(
+                    NOW() - INTERVAL '{}', 
+                    NOW(), 
+                    '1 {}'::interval
+                ) as bucket_time
+            )
+            SELECT 
+                grid.bucket_time,
+                COALESCE(SUM(ts.inbound_count), 0)::BIGINT as inc, 
+                COALESCE(SUM(ts.outbound_count), 0)::BIGINT as outc, 
+                COALESCE(SUM(ts.blocked_count), 0)::BIGINT as blkc 
+            FROM grid
+            LEFT JOIN traffic_stats ts 
+            ON date_trunc('{}', ts.time) = date_trunc('{}', grid.bucket_time)
+            GROUP BY grid.bucket_time
+            ORDER BY grid.bucket_time ASC",
+            sql_interval, bucket_size, bucket_size, bucket_size
+        );
+
+        let rows_chart = self.db_client.query(query_chart.as_str(), &[])
+            .await
+            .map_err(|e| {
+                log::error!("Erreur SQL Chart: {}", e);
+                tonic::Status::internal("Erreur DB Chart")
+            })?;
+
+        let mut chart_data_vec = Vec::new();
+        for row in rows_chart {
+            let time_val: SystemTime = row.get("bucket_time");
+            let timestamp = time_val.duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+            chart_data_vec.push(crate::firewall::TrafficPoint {
+                timestamp,
+                inbound: row.get("inc"),
+                outbound: row.get("outc"),
+                blocked: row.get("blkc"),
+            });
+        }
 
         Ok(Response::new(GetTrafficStatsResponse {
-            total_inbound: row_totals.get("ti"),
-            total_outbound: row_totals.get("to"),
-            total_blocked: row_totals.get("tb"),
-            time_period: label.to_string(),
-            chart_data,
+            total_inbound: row_totals.get("total_in"),
+            total_outbound: row_totals.get("total_out"),
+            total_blocked: row_totals.get("total_blocked"),
+            time_period: period_label.to_string(),
+            chart_data: chart_data_vec,
         }))
     }
 
+
+
+     // --- Implémentation de la fonction watch_logs ---
     async fn watch_logs(
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Self::WatchLogsStream>, tonic::Status> {
-        info!("gRPC: Client logs connecté");
+        info!("gRPC: Nouveau client connecté au flux de logs");
+
+        // On crée un abonné (subscriber) au canal broadcast
         let mut rx = self.log_tx.subscribe();
+        
+        // On crée un canal mpsc pour le stream gRPC
         let (tx, rx_stream) = tokio::sync::mpsc::channel(4);
 
         tokio::spawn(async move {
             while let Ok(log_entry) = rx.recv().await {
-                if tx.send(Ok(log_entry)).await.is_err() { break; }
+                if tx.send(Ok(log_entry)).await.is_err() {
+                    break; // Le client s'est déconnecté
+                }
             }
         });
 
@@ -371,56 +529,66 @@ impl FirewallService for MyFirewallService {
     }
 }
 
-// Stats Collector
+// Fonction pour récolter les stats et les envoyer en DB
 async fn collect_and_store_stats(
     stats_map: PerCpuArray<aya::maps::MapData, u64>,
     db: Arc<tokio_postgres::Client>,
 ) {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
-    let mut prev = (0u64, 0u64, 0u64); // in, out, blocked
+    let mut prev_inbound = 0u64;
+    let mut prev_outbound = 0u64;
+    let mut prev_blocked = 0u64;
 
     loop {
         interval.tick().await;
-        let mut curr = (0u64, 0u64, 0u64);
 
-        if let Ok(v) = stats_map.get(&STAT_INBOUND, 0) { curr.0 = v.iter().sum(); }
-        if let Ok(v) = stats_map.get(&STAT_OUTBOUND, 0) { curr.1 = v.iter().sum(); }
-        if let Ok(v) = stats_map.get(&STAT_BLOCKED, 0) { curr.2 = v.iter().sum(); }
+        let mut curr_inbound = 0u64;
+        let mut curr_outbound = 0u64;
+        let mut curr_blocked = 0u64;
 
-        let delta = (
-            curr.0.saturating_sub(prev.0),
-            curr.1.saturating_sub(prev.1),
-            curr.2.saturating_sub(prev.2)
-        );
-        prev = curr;
+        if let Ok(values) = stats_map.get(&STAT_INBOUND, 0) { curr_inbound = values.iter().sum(); }
+        if let Ok(values) = stats_map.get(&STAT_OUTBOUND, 0) { curr_outbound = values.iter().sum(); }
+        if let Ok(values) = stats_map.get(&STAT_BLOCKED, 0) { curr_blocked = values.iter().sum(); }
 
-        if delta.0 > 0 || delta.1 > 0 || delta.2 > 0 {
-            let _ = db.execute(
+        let delta_inbound = curr_inbound.saturating_sub(prev_inbound);
+        let delta_outbound = curr_outbound.saturating_sub(prev_outbound);
+        let delta_blocked = curr_blocked.saturating_sub(prev_blocked);
+
+        prev_inbound = curr_inbound;
+        prev_outbound = curr_outbound;
+        prev_blocked = curr_blocked;
+
+        if delta_inbound > 0 || delta_outbound > 0 || delta_blocked > 0 {
+            let res = db.execute(
                 "INSERT INTO traffic_stats (inbound_count, outbound_count, blocked_count) VALUES ($1, $2, $3)",
-                &[&(delta.0 as i64), &(delta.1 as i64), &(delta.2 as i64)],
+                &[&(delta_inbound as i64), &(delta_outbound as i64), &(delta_blocked as i64)],
             ).await;
+            if let Err(e) = res { log::error!("Erreur insertion stats DB: {}", e); }
         }
     }
 }
 
-// DB Worker for Logs
+
 async fn spawn_db_logger_worker(
     mut rx: tokio::sync::mpsc::Receiver<DbLogMessage>,
     db_client: Arc<tokio_postgres::Client>,
 ) {
-    let batch_size = 500; 
-    let flush_interval = std::time::Duration::from_secs(2);
+    let batch_size = 500; // On écrit tous les 500 logs
+    let flush_interval = std::time::Duration::from_secs(2); // Ou toutes les 2 secondes max
+    
     let mut buffer: Vec<DbLogMessage> = Vec::with_capacity(batch_size);
     let mut interval = tokio::time::interval(flush_interval);
 
     loop {
         tokio::select! {
+            // Cas 1 : On reçoit un log
             Some(log) = rx.recv() => {
                 buffer.push(log);
                 if buffer.len() >= batch_size {
                     flush_buffer(&db_client, &mut buffer).await;
                 }
             }
+            // Cas 2 : Le temps est écoulé (pour ne pas laisser des logs coincés si peu de trafic)
             _ = interval.tick() => {
                 if !buffer.is_empty() {
                     flush_buffer(&db_client, &mut buffer).await;
@@ -430,26 +598,57 @@ async fn spawn_db_logger_worker(
     }
 }
 
-// DB Batch Insert
+// Fonction pour construire la grosse requête SQL
 async fn flush_buffer(client: &tokio_postgres::Client, buffer: &mut Vec<DbLogMessage>) {
     if buffer.is_empty() { return; }
 
-    let stmt = match client.prepare("INSERT INTO traffic_logs (timestamp, source_ip, dest_ip, source_port, dest_port, protocol, action) VALUES ($1, $2, $3, $4, $5, $6, $7)").await {
+    // Construction dynamique de la requête : 
+    // INSERT INTO ... VALUES ($1, $2, ...), ($7, $8, ...), ...
+    let mut query = String::from("INSERT INTO traffic_logs (timestamp, source_ip, dest_ip, source_port, dest_port, protocol, action) VALUES ");
+    let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
+
+    for (i, row) in buffer.iter().enumerate() {
+        if i > 0 { query.push_str(","); }
+        
+        // On calcule les index des paramètres ($1, $2, etc.)
+        let offset = i * 7; 
+        query.push_str(&format!(
+            "(${}, ${}, ${}, ${}, ${}, ${}, ${})",
+            offset + 1, offset + 2, offset + 3, offset + 4, offset + 5, offset + 6, offset + 7
+        ));
+    }
+    
+    let tx = match client.transaction().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            eprintln!("Erreur création transaction DB: {}", e);
+            return;
+        }
+    };
+
+    let stmt = match tx.prepare("INSERT INTO traffic_logs (timestamp, source_ip, dest_ip, source_port, dest_port, protocol, action) VALUES ($1, $2, $3, $4, $5, $6, $7)").await {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("SQL Prepare Error: {}", e);
+            eprintln!("Erreur préparation SQL: {}", e);
             return;
         }
     };
 
     for log in buffer.iter() {
-        if let Err(e) = client.execute(&stmt, &[
+        if let Err(e) = tx.execute(&stmt, &[
             &log.timestamp, &log.src_ip, &log.dest_ip, 
             &log.src_port, &log.dest_port, &log.protocol, &log.action
         ]).await {
-            eprintln!("SQL Insert Error: {}", e);
+            eprintln!("Erreur insertion log batch: {}", e);
         }
     }
+
+    if let Err(e) = tx.commit().await {
+        eprintln!("Erreur commit transaction: {}", e);
+    } else {
+        // Optionnel : println!("Batch de {} logs inséré.", buffer.len());
+    }
+
     buffer.clear();
 }
 
@@ -463,7 +662,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .append()
         .duplicate_to_stdout(Duplicate::Info)
         .start()
-        .context("Erreur logger")?;
+        .context("Erreur initialisation logger")?;
+    info!("Logger initialisé.");
 
     let mut bpf = Ebpf::load(include_bytes_aligned!(concat!(env!("OUT_DIR"), "/xdp-drop")))?;
     let _ = EbpfLogger::init(&mut bpf);
@@ -472,11 +672,11 @@ async fn main() -> Result<(), anyhow::Error> {
         .ok_or_else(|| anyhow::anyhow!("Programme eBPF 'xdp_firewall' introuvable"))?.try_into()?;
     program.load()?;
     program.attach(&opt.iface, XdpFlags::default())?;
-    info!("eBPF attaché à {}.", opt.iface);
+    info!("eBPF program loaded and attached to {}.", opt.iface);
 
-    let map = bpf.take_map("BLOCKLIST").ok_or_else(|| anyhow::anyhow!("Map BLOCKLIST manquante"))?;
+    let map = bpf.take_map("BLOCKLIST").ok_or_else(|| anyhow::anyhow!("Map BLOCKLIST introuvable"))?;
     let blocklist_map: HashMap<aya::maps::MapData, IpPort, u32> = HashMap::try_from(map)?;
-    let blocklist = Arc::new(tokio::sync::Mutex::new(blocklist_map));
+    let blocklist: Arc<tokio::sync::Mutex<HashMap<aya::maps::MapData, IpPort, u32>>> = Arc::new(tokio::sync::Mutex::new(blocklist_map));
 
     let (pg_client_raw, connection) = tokio_postgres::connect(
         "host=localhost user=postgres password=postgres dbname=firewall", tokio_postgres::NoTls,
@@ -484,102 +684,149 @@ async fn main() -> Result<(), anyhow::Error> {
     let pg_client = Arc::new(pg_client_raw);
     tokio::spawn(async move { let _ = connection.await; });
 
-    // Initial Rules Loading
     let initial_rules = pg_client.query("SELECT id, name, source_ip, dest_ip, dest_port, action, protocol FROM rules", &[]).await?;
+    const ACTION_DENY: u32 = 1;
+    const ACTION_ALLOW: u32 = 2;
+
+    info!("--- Chargement des règles au démarrage ---");
     for row in initial_rules {
-        let ip_src = if row.get::<_, String>("source_ip").to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { row.get::<_, String>("source_ip").parse().unwrap() };
-        let ip_dst = if row.get::<_, String>("dest_ip").to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { row.get::<_, String>("dest_ip").parse().unwrap() };
-        
+        let id: i32 = row.get("id");
+        let name: String = row.get("name");
+        let source_ip: String = row.get("source_ip");
+        let dest_ip: String = row.get("dest_ip");
+        let dest_port: Option<i32> = row.get("dest_port");
+        let action: String = row.get("action");
+        let protocol: Option<String> = row.get("protocol");
+
+        let ip_src = if source_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { source_ip.parse()? };
+        let ip_dst = if dest_ip.to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { dest_ip.parse()? };
+
         let key = IpPort {
             addr: u32::from(ip_src).to_be(),
             addr_dest: u32::from(ip_dst).to_be(),
-            port: (row.get::<_, Option<i32>>("dest_port").unwrap_or(0) as u16).to_be(),
-            protocol: protocol_to_u8(&row.get("protocol")),
+            port: (dest_port.unwrap_or(0) as u16).to_be(),
+            protocol: protocol_to_u8(&protocol),
             _pad: 0,
         };
-        let act = if row.get::<_, String>("action").to_lowercase() == "deny" { 1 } else { 2 };
-        blocklist.lock().await.insert(key, act, 0)?;
-        info!("Règle chargée: {}", row.get::<_, String>("name"));
+        let action_value = match action.to_lowercase().as_str() {
+            "deny" => ACTION_DENY,
+            "allow" => ACTION_ALLOW,
+            _ => continue,
+        };
+
+        blocklist.lock().await.insert(key, action_value, 0)?;
+        info!("📜 Règle chargée [ID: {} | {}]", id, name);
     }
 
-    // Stats
-    let stats_map_data = bpf.take_map("TRAFFIC_STATS").unwrap();
+    let stats_map_data = bpf.take_map("TRAFFIC_STATS")
+        .ok_or_else(|| anyhow::anyhow!("Map TRAFFIC_STATS introuvable dans le programme eBPF"))?;
     let stats_map: PerCpuArray<aya::maps::MapData, u64> = PerCpuArray::try_from(stats_map_data)?;
-    let db_cl_stats = Arc::clone(&pg_client);
-    tokio::spawn(async move { collect_and_store_stats(stats_map, db_cl_stats).await; });
+    let db_client_for_stats = Arc::clone(&pg_client);
 
-    // DB Logger Worker
+    tokio::spawn(async move {
+        collect_and_store_stats(stats_map, db_client_for_stats).await;
+    });
+    
     let (db_tx, db_rx) = tokio::sync::mpsc::channel::<DbLogMessage>(4096);
-    let db_cl_logs = Arc::clone(&pg_client);
-    tokio::spawn(async move { spawn_db_logger_worker(db_rx, db_cl_logs).await; });
+    
+    // 2. Lancer le Worker DB en tâche de fond
+    let db_client_worker = Arc::clone(&pg_client);
+    tokio::spawn(async move {
+        spawn_db_logger_worker(db_rx, db_client_worker).await;
+    });
 
-    // Broadcast channel for gRPC
-    let (log_tx, _rx) = tokio::sync::broadcast::channel(100);
+   let (log_tx, _rx) = tokio::sync::broadcast::channel(100);
 
-    // eBPF Events Listener
-    let events_map = bpf.take_map("EVENTS").ok_or_else(|| anyhow::anyhow!("Map EVENTS introuvable"))?;
+   let events_map = bpf.take_map("EVENTS").ok_or_else(|| anyhow::anyhow!("Map EVENTS introuvable"))?;
+    
+    // 2. Initialisation de l'array d'événements asynchrones
     let mut events: AsyncPerfEventArray<_> = AsyncPerfEventArray::try_from(events_map)?;
-    let log_tx_events = log_tx.clone();
 
-    for cpu_id in online_cpus().map_err(|e| anyhow::anyhow!("CPU Error: {:?}", e))? {
+    // 3. On clone le transmetteur pour le donner à la tâche asynchrone
+    let log_tx_for_events = log_tx.clone();
+
+    // 4. On boucle sur chaque CPU pour écouter les événements noyau
+    for cpu_id in online_cpus().map_err(|e| anyhow::anyhow!("Erreur CPU: {:?}", e))? {
         let mut buf = events.open(cpu_id, None)?;
-        let tx = log_tx_events.clone();
-        let db_sender = db_tx.clone();
+        let tx = log_tx_for_events.clone(); // Clone pour ce thread spécifique
 
         tokio::spawn(async move {
+            // Tampon pour stocker les données brutes
+            // On prépare 10 buffers de 1024 octets (suffisant pour PacketLog)
             let mut buffers = (0..10).map(|_| BytesMut::with_capacity(1024)).collect::<Vec<_>>();
+
             loop {
+                // Attente des événements
                 let events = buf.read_events(&mut buffers).await.unwrap();
+                
+                // Lecture de chaque événement reçu
                 for i in 0..events.read {
-                    let ptr = buffers[i].as_ptr() as *const PacketLog;
+                    let buf = &mut buffers[i];
+                    let ptr = buf.as_ptr() as *const PacketLog;
+                    // Lecture non alignée car venant du buffer brut
                     let data = unsafe { ptr.read_unaligned() };
 
+                    // Formatage des données pour l'humain
                     let src_ip = Ipv4Addr::from(u32::from_be(data.ipv4_src));
                     let dst_ip = Ipv4Addr::from(u32::from_be(data.ipv4_dst));
-                    let (act, lvl) = if data.action == 1 { ("DENY", "WARN") } else { ("ALLOW", "INFO") };
-                    let proto_str = get_proto_name(data.protocol);
-                    let now = SystemTime::now();
+                    
+                    let (action_str, level) = if data.action == 1 { 
+                        ("DENY", "WARN") 
+                    } else { 
+                        ("ALLOW", "INFO") 
+                    };
 
-                    // gRPC
-                    let msg = format!("TRAFFIC {} | Proto: {} | {}:{} -> {}:{}", act, data.protocol, src_ip, data.port_src, dst_ip, data.port_dst);
-                    let _ = tx.send(LogEntry { message: msg, level: lvl.to_string(), timestamp: format!("{:?}", now) });
+                    // Création du message texte
+                    let msg = format!(
+                        "TRAFFIC {} | Proto: {} | {}:{} -> {}:{}",
+                        action_str,
+                        data.protocol,
+                        src_ip, data.port_src,
+                        dst_ip, data.port_dst
+                    );
 
-                    // DB
-                    let _ = db_sender.try_send(DbLogMessage {
+                    // Envoi dans le canal gRPC
+                    // On ignore l'erreur si personne n'écoute (send error)
+                    let _ = tx.send(LogEntry {
+                        message: msg,
+                        level: level.to_string(),
+                        timestamp: format!("{:?}", SystemTime::now()),
+                    });
+
+                    let log_msg = DbLogMessage {
                         timestamp: now,
-                        src_ip: src_ip.to_string(),
-                        dest_ip: dst_ip.to_string(),
+                        src_ip: src_ip_s,
+                        dest_ip: dst_ip_s,
                         src_port: data.port_src as i32,
                         dest_port: data.port_dst as i32,
                         protocol: proto_str,
-                        action: act.to_string(),
-                    });
+                        action: action_str.to_string(),
+                    };
+
+                    if let Err(_) = db_sender.try_send(log_msg) {
+                        warn!("Queue DB pleine, log perdu");
+                    }
                 }
             }
         });
     }
-
     let firewall_service = MyFirewallService {
         db_client: Arc::clone(&pg_client),
         blocklist: Arc::clone(&blocklist),
         log_tx,
     };
 
-    // --- SUPPORT GRPC-WEB + CORS ---
-    use tower_http::cors::{CorsLayer, Any};
-    let cors = CorsLayer::new().allow_origin(Any).allow_headers(Any).allow_methods(Any);
+
+
     let grpc_addr = "[::1]:50051".parse()?;
-    
-    info!("Serveur gRPC en écoute sur {}", grpc_addr);
     tokio::spawn(
         Server::builder()
-            .accept_http1(true) // Important pour gRPC-Web
-            .layer(cors)
-            .add_service(tonic_web::enable(FirewallServiceServer::new(firewall_service)))
+            .add_service(FirewallServiceServer::new(firewall_service))
             .serve(grpc_addr),
     );
 
+    info!("Firewall en marche. Ctrl-C pour arrêter.");
     signal::ctrl_c().await?;
-    info!("Arrêt.");
+    info!("Arrêt du firewall...");
     Ok(())
 }

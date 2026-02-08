@@ -51,6 +51,19 @@ struct Opt {
     iface: String,
 }
 
+
+#[derive(Debug)]
+struct DbLogMessage {
+    timestamp: SystemTime,
+    src_ip: String,
+    dest_ip: String,
+    src_port: i32,
+    dest_port: i32,
+    protocol: String,
+    action: String,
+}
+
+
 // utilitaire pour convertir le protocole
 fn protocol_to_u8(protocol_str: &Option<String>) -> u8 {
     match protocol_str {
@@ -555,6 +568,90 @@ async fn collect_and_store_stats(
     }
 }
 
+
+async fn spawn_db_logger_worker(
+    mut rx: tokio::sync::mpsc::Receiver<DbLogMessage>,
+    db_client: Arc<tokio_postgres::Client>,
+) {
+    let batch_size = 500; // On écrit tous les 500 logs
+    let flush_interval = std::time::Duration::from_secs(2); // Ou toutes les 2 secondes max
+    
+    let mut buffer: Vec<DbLogMessage> = Vec::with_capacity(batch_size);
+    let mut interval = tokio::time::interval(flush_interval);
+
+    loop {
+        tokio::select! {
+            // Cas 1 : On reçoit un log
+            Some(log) = rx.recv() => {
+                buffer.push(log);
+                if buffer.len() >= batch_size {
+                    flush_buffer(&db_client, &mut buffer).await;
+                }
+            }
+            // Cas 2 : Le temps est écoulé (pour ne pas laisser des logs coincés si peu de trafic)
+            _ = interval.tick() => {
+                if !buffer.is_empty() {
+                    flush_buffer(&db_client, &mut buffer).await;
+                }
+            }
+        }
+    }
+}
+
+// Fonction pour construire la grosse requête SQL
+async fn flush_buffer(client: &tokio_postgres::Client, buffer: &mut Vec<DbLogMessage>) {
+    if buffer.is_empty() { return; }
+
+    // Construction dynamique de la requête : 
+    // INSERT INTO ... VALUES ($1, $2, ...), ($7, $8, ...), ...
+    let mut query = String::from("INSERT INTO traffic_logs (timestamp, source_ip, dest_ip, source_port, dest_port, protocol, action) VALUES ");
+    let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
+
+    for (i, row) in buffer.iter().enumerate() {
+        if i > 0 { query.push_str(","); }
+        
+        // On calcule les index des paramètres ($1, $2, etc.)
+        let offset = i * 7; 
+        query.push_str(&format!(
+            "(${}, ${}, ${}, ${}, ${}, ${}, ${})",
+            offset + 1, offset + 2, offset + 3, offset + 4, offset + 5, offset + 6, offset + 7
+        ));
+    }
+    
+    let tx = match client.transaction().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            eprintln!("Erreur création transaction DB: {}", e);
+            return;
+        }
+    };
+
+    let stmt = match tx.prepare("INSERT INTO traffic_logs (timestamp, source_ip, dest_ip, source_port, dest_port, protocol, action) VALUES ($1, $2, $3, $4, $5, $6, $7)").await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Erreur préparation SQL: {}", e);
+            return;
+        }
+    };
+
+    for log in buffer.iter() {
+        if let Err(e) = tx.execute(&stmt, &[
+            &log.timestamp, &log.src_ip, &log.dest_ip, 
+            &log.src_port, &log.dest_port, &log.protocol, &log.action
+        ]).await {
+            eprintln!("Erreur insertion log batch: {}", e);
+        }
+    }
+
+    if let Err(e) = tx.commit().await {
+        eprintln!("Erreur commit transaction: {}", e);
+    } else {
+        // Optionnel : println!("Batch de {} logs inséré.", buffer.len());
+    }
+
+    buffer.clear();
+}
+
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let opt = Opt::parse();
@@ -629,6 +726,14 @@ async fn main() -> Result<(), anyhow::Error> {
     tokio::spawn(async move {
         collect_and_store_stats(stats_map, db_client_for_stats).await;
     });
+    
+    let (db_tx, db_rx) = tokio::sync::mpsc::channel::<DbLogMessage>(4096);
+    
+    // 2. Lancer le Worker DB en tâche de fond
+    let db_client_worker = Arc::clone(&pg_client);
+    tokio::spawn(async move {
+        spawn_db_logger_worker(db_rx, db_client_worker).await;
+    });
 
    let (log_tx, _rx) = tokio::sync::broadcast::channel(100);
 
@@ -687,6 +792,20 @@ async fn main() -> Result<(), anyhow::Error> {
                         level: level.to_string(),
                         timestamp: format!("{:?}", SystemTime::now()),
                     });
+
+                    let log_msg = DbLogMessage {
+                        timestamp: now,
+                        src_ip: src_ip_s,
+                        dest_ip: dst_ip_s,
+                        src_port: data.port_src as i32,
+                        dest_port: data.port_dst as i32,
+                        protocol: proto_str,
+                        action: action_str.to_string(),
+                    };
+
+                    if let Err(_) = db_sender.try_send(log_msg) {
+                        warn!("Queue DB pleine, log perdu");
+                    }
                 }
             }
         });
@@ -696,6 +815,8 @@ async fn main() -> Result<(), anyhow::Error> {
         blocklist: Arc::clone(&blocklist),
         log_tx,
     };
+
+
 
     let grpc_addr = "[::1]:50051".parse()?;
     tokio::spawn(

@@ -160,6 +160,18 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
+    let key_check_source_port_any = IpPort {
+        addr: IP_ANY_BE, 
+        addr_dest: IP_ANY_BE, 
+        port: source_port_be, 
+        protocol: PROTO_ANY, // <--- On vérifie si une règle ANY autorise ce port source
+        _pad: 0,
+    };
+    if let Some(action) = check_firewall_rule(&key_check_source_port_any) {
+        log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
+        return Ok(verdict(action, source_ip_be, dest_ip_be));
+    }
+
     // 6. (ANY src, dest) - port ANY
     let key_anysrc_dest_port_any = IpPort {
         addr: IP_ANY_BE, addr_dest: dest_ip_be, port: 0, protocol: protocol as u8, _pad: 0,
@@ -177,6 +189,19 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
+
+    let key_any_any_proto_any = IpPort {
+        addr: IP_ANY_BE, 
+        addr_dest: IP_ANY_BE, 
+        port: dest_port_be, 
+        protocol: PROTO_ANY, // On force la recherche sur le proto 0
+        _pad: 0,
+    };
+    if let Some(action) = check_firewall_rule(&key_any_any_proto_any) {
+        log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
+        return Ok(verdict(action, source_ip_be, dest_ip_be));
+    }
+
 
     // 8. (ANY src, ANY dest) - port ANY (Proto exact)
     let key_any_any_port_any = IpPort {

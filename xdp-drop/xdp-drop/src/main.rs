@@ -357,13 +357,74 @@ impl FirewallService for MyFirewallService {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Self::WatchLogsStream>, tonic::Status> {
-        info!("gRPC: Client logs connecté");
-        let mut rx = self.log_tx.subscribe();
-        let (tx, rx_stream) = tokio::sync::mpsc::channel(4);
+        info!("gRPC: Client logs connecté - Récupération historique + Live");
 
+        // 1. Création du channel pour envoyer les logs au client gRPC
+        // On augmente un peu la capacité du buffer pour encaisser l'historique
+        let (tx, rx_stream) = tokio::sync::mpsc::channel(1000);
+
+        // 2. On clone les ressources nécessaires pour la tâche asynchrone
+        let db_client = self.db_client.clone();
+        
+        // IMPORTANT : On s'abonne au broadcast MAINTENANT pour ne pas rater de logs 
+        // qui arriveraient pendant qu'on interroge la base de données.
+        // Les messages seront mis en mémoire tampon dans `rx_broadcast`.
+        let mut rx_broadcast = self.log_tx.subscribe();
+
+        // 3. On lance la tâche qui va gérer le flux
         tokio::spawn(async move {
-            while let Ok(log_entry) = rx.recv().await {
-                if tx.send(Ok(log_entry)).await.is_err() { break; }
+            // --- ÉTAPE A : Envoyer l'historique (Base de données) ---
+            let query = "
+                SELECT timestamp, source_ip, dest_ip, source_port, dest_port, protocol, action 
+                FROM traffic_logs 
+                WHERE timestamp > NOW() - INTERVAL '24 hours' 
+                ORDER BY timestamp ASC";
+
+            match db_client.query(query, &[]).await {
+                Ok(rows) => {
+                    for row in rows {
+                        // On récupère les données brutes
+                        let ts: SystemTime = row.get("timestamp");
+                        let src_ip: String = row.get("source_ip");
+                        let dest_ip: String = row.get("dest_ip");
+                        let src_port: i32 = row.get("source_port");
+                        let dest_port: i32 = row.get("dest_port");
+                        let proto: String = row.get("protocol");
+                        let action: String = row.get("action");
+
+                        // On reformate le message pour qu'il ressemble exactement aux logs live
+                        // (Même logique que dans votre boucle principale main)
+                        let level = if action == "DENY" { "WARN" } else { "INFO" };
+                        let msg = format!("TRAFFIC {} | Proto: {} | {}:{} -> {}:{}", 
+                            action, proto, src_ip, src_port, dest_ip, dest_port);
+
+                        let entry = LogEntry {
+                            message: msg,
+                            level: level.to_string(),
+                            // Note: Idéalement, utilisez chrono pour formater la date proprement
+                            timestamp: format!("{:?}", ts), 
+                        };
+
+                        // Envoi au client gRPC
+                        if let Err(_) = tx.send(Ok(entry)).await {
+                            // Le client s'est déconnecté pendant l'envoi de l'historique
+                            return;
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Erreur lors de la récupération de l'historique des logs: {}", e);
+                    // On continue vers le live même si la DB échoue
+                }
+            }
+
+            // --- ÉTAPE B : Envoyer le flux temps réel (Broadcast) ---
+            // On consomme maintenant les messages qui se sont accumulés dans le buffer
+            // du broadcast pendant qu'on lisait la DB, puis on attend les nouveaux.
+            while let Ok(log_entry) = rx_broadcast.recv().await {
+                if tx.send(Ok(log_entry)).await.is_err() {
+                    break; // Le client s'est déconnecté
+                }
             }
         });
 

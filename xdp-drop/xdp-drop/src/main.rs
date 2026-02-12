@@ -396,7 +396,7 @@ impl FirewallService for MyFirewallService {
                         // (Même logique que dans votre boucle principale main)
                         let level = if action == "DENY" { "WARN" } else { "INFO" };
                         let msg = format!("TRAFFIC {} | Proto: {} | {}:{} -> {}:{}", 
-                            action, proto, src_ip, src_port, dest_ip, dest_port);
+                            action, proto_src, src_ip, src_port, dest_ip, dest_port);
 
                         let entry = LogEntry {
                             message: msg,

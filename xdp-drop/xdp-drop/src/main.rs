@@ -396,7 +396,7 @@ impl FirewallService for MyFirewallService {
                         // (Même logique que dans votre boucle principale main)
                         let level = if action == "DENY" { "WARN" } else { "INFO" };
                         let msg = format!("TRAFFIC {} | Proto: {} | {}:{} -> {}:{}", 
-                            action, proto_str, src_ip, src_port, dest_ip, dest_port);
+                            action, proto, src_ip, src_port, dest_ip, dest_port);
 
                         let entry = LogEntry {
                             message: msg,
@@ -606,7 +606,7 @@ async fn main() -> Result<(), anyhow::Error> {
                     // ------------------------------------------------
 
                     // gRPC
-                    let msg = format!("TRAFFIC {} | Proto: {} | {}:{} -> {}:{}", act, data.protocol, src_ip, data.port_src, dst_ip, data.port_dst);
+                    let msg = format!("TRAFFIC {} | Proto: {} | {}:{} -> {}:{}", act, proto_str, src_ip, data.port_src, dst_ip, data.port_dst);
                     let _ = tx.send(LogEntry { message: msg, level: lvl.to_string(), timestamp: format!("{:?}", now) });
 
                     // DB

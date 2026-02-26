@@ -1,42 +1,43 @@
-// Dans: xdp-drop-common/src/lib.rs (ou votre crate commune équivalente)
+#![no_std]
 
-#![no_std] // Assurez-vous que ceci est bien au début du fichier
-
-// Définition existante (gardez-la)
+// Structure partagée entre eBPF (Kernel) et Userspace
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)] // Ajout de Debug pour le println! du userspace
 pub struct PacketLog {
-    pub ipv4_address: u32,
-    pub action: u32,
+    pub ipv4_src: u32,
+    pub ipv4_dst: u32,
+    pub port_src: u16,
+    pub port_dst: u16,
+    pub protocol: u32,
+    pub action: u32, // 1 = BLOCK (DENY), 2 = ALLOW
 }
 
-// Implémentation Pod existante (gardez-la)
+// Constantes pour les protocoles
+pub const PROTO_TCP: u8 = 6;
+pub const PROTO_UDP: u8 = 17;
+pub const PROTO_ICMP: u8 = 1;
+pub const PROTO_ANY: u8 = 0;
+
+// Constantes pour les stats
+pub const STAT_INBOUND: u32 = 0;
+pub const STAT_OUTBOUND: u32 = 1;
+pub const STAT_BLOCKED: u32 = 2;
+pub const STAT_TOTAL_TYPES: u32 = 3;
+
+// Clé pour la Map de règles
+#[repr(C)]
+#[derive(Clone, Copy, Debug)] // Debug nécessaire ici aussi
+pub struct IpPort {
+    pub addr: u32,      // IP Source
+    pub addr_dest: u32, // IP Dest
+    pub port: u16,      // Port Dest
+    pub protocol: u8,   // Protocole
+    pub _pad: u8,       // Padding pour alignement mémoire
+}
+
+// Nécessaire pour que Aya puisse lire la struct depuis le Userspace
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for PacketLog {}
 
-
-// --- Nouvelle structure IpPort ---
-
-/// Représente une combinaison d'adresse IPv4 et de port.
-/// Conçue pour être partagée entre l'espace utilisateur et les programmes eBPF.
-#[repr(C)] // Assure une disposition mémoire compatible C, essentielle pour eBPF.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)] // Clone/Copy sont essentiels pour les maps. Debug est utile.
-                              // Ajoutez PartialEq, Eq, Hash si utilisé comme clé dans std::collections::HashMap (user-space)
-pub struct IpPort {
-    /// Adresse IPv4, généralement stockée en network byte order (big-endian).
-    pub addr: u32,
-    pub addr_dest : u32,
-    /// Numéro de port, généralement stocké en network byte order (big-endian).
-    pub port: u16,
-    pub _pad: u16,
-    // Deux octets de padding seront probablement insérés ici par le compilateur
-    // à cause de #[repr(C)] pour aligner la structure sur 4 octets (alignement de addr).
-    // Taille totale : 4 (addr) + 2 (port) + 2 (padding) = 8 octets.
-}
-
-/// Marque IpPort comme sûr pour être utilisé comme Plain Old Data (POD) dans les maps eBPF
-/// lorsque la feature "user" est activée (c'est-à-dire lors de la compilation pour l'espace utilisateur).
 #[cfg(feature = "user")]
-unsafe impl aya::Pod for IpPort {} // Ajoutez ceci pour IpPort, comme pour PacketLog
-
-// --- Autres définitions partagées si nécessaire ---
+unsafe impl aya::Pod for IpPort {}

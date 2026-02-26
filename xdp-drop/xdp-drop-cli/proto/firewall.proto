@@ -9,6 +9,9 @@ service FirewallService {
     rpc ListRules (google.protobuf.Empty) returns (RuleListResponse); // Nouvelle RPC
     rpc CreateRule (CreateRuleRequest) returns (CreateRuleResponse);
     rpc DeleteRule (DeleteRuleRequest) returns (DeleteRuleResponse);
+    rpc GetTrafficStats (GetTrafficStatsRequest) returns (GetTrafficStatsResponse);
+    rpc UpdateRule (UpdateRuleRequest) returns (UpdateRuleResponse);
+    rpc WatchLogs (google.protobuf.Empty) returns (stream LogEntry);    
 }
 
 message FirewallStatus {
@@ -18,13 +21,14 @@ message FirewallStatus {
 // Message pour une seule règle
 message RuleInfo {
     int32 id = 1;
-    string source_ip = 2;
-    string dest_ip = 3;
-    string source_port = 4; // Utiliser string pour pouvoir mettre "*"
-    string dest_port = 5;   // Utiliser string pour pouvoir mettre "*"
-    string action = 6;
-    string protocol = 7;
-    int32 usage_count = 8;
+     string name = 2;
+    string source_ip = 3;
+    string dest_ip = 4;
+    string source_port = 5; // Utiliser string pour pouvoir mettre "*"
+    string dest_port = 6;   // Utiliser string pour pouvoir mettre "*"
+    string action = 7;
+    string protocol = 8;
+    int32 usage_count = 9;
 }
 
 // Message pour la liste des règles
@@ -34,12 +38,13 @@ message RuleListResponse {
 
 // Message pour la requête de création de règle
 message RuleData { 
-    string source_ip = 1;
-    string dest_ip = 2;
-    string source_port = 3; // Peut être "*" ou un numéro
-    string dest_port = 4;   // Peut être "*" ou un numéro
-    string action = 5;      // "ALLOW", "DENY"
-    string protocol = 6;    // "TCP", "UDP", "ANY", etc.
+     string name = 1;
+    string source_ip = 2;
+    string dest_ip = 3;
+    string source_port = 4; // Peut être "*" ou un numéro
+    string dest_port = 5;   // Peut être "*" ou un numéro
+    string action = 6;      // "ALLOW", "DENY"
+    string protocol = 7;    // "TCP", "UDP", "ANY", etc.
 }
 
 message CreateRuleRequest {
@@ -65,4 +70,41 @@ message DeleteRuleRequest {
 message DeleteRuleResponse {
     int32 delete_rule_id = 1; // L'ID de la règle nouvellement créée
     string message = 2;        // Message de statut, ex: "Règle créée avec succès"
+}
+
+message UpdateRuleRequest {
+    int32 id = 1;
+    RuleData rule = 2;
+}
+
+message UpdateRuleResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+
+message GetTrafficStatsRequest {
+    string time_range = 1; // ex: "24h", "1h", "all" (Optionnel)
+}
+
+message GetTrafficStatsResponse {
+    int64 total_inbound = 1;
+    int64 total_outbound = 2;
+    int64 total_blocked = 3;
+    string time_period = 4; // Pour afficher "Depuis le début" ou "Dernières 24h"
+    
+    repeated TrafficPoint chart_data = 5; 
+}
+
+message TrafficPoint {
+    int64 timestamp = 1; // Timestamp UNIX (secondes)
+    int64 inbound = 2;
+    int64 outbound = 3;
+    int64 blocked = 4;
+}
+
+message LogEntry {
+    string message = 1;
+    string level = 2; // "INFO", "WARN", "ERROR"
+    string timestamp = 3;
 }

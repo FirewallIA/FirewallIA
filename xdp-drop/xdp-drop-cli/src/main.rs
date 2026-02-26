@@ -12,9 +12,13 @@ pub mod google {
 
 // Importer les types nécessaires
 use firewall::firewall_service_client::FirewallServiceClient;
-use firewall::{RuleInfo, RuleListResponse, RuleData, CreateRuleRequest, CreateRuleResponse,DeleteRuleRequest, DeleteRuleResponse, RuleDataDelete}; // Importer les nouveaux types
+use firewall::{RuleInfo, RuleListResponse, RuleData, CreateRuleRequest, CreateRuleResponse,
+    DeleteRuleRequest, DeleteRuleResponse, RuleDataDelete, UpdateRuleRequest, 
+    GetTrafficStatsRequest}; 
 use google::protobuf::Empty;
 use clap::Parser;
+
+use tonic::transport::Channel;
 
 /// Une CLI simple pour interagir avec le service Firewall gRPC
 #[derive(Parser, Debug)]
@@ -35,6 +39,8 @@ enum Commands {
     ListRules, // Nouvelle sous-commande
     // ... futures commandes
     CreateRule {
+         #[clap(long)]
+        name: String,     
         #[clap(long)]
         source_ip: String,
         #[clap(long)]
@@ -52,6 +58,23 @@ enum Commands {
         #[clap(long)]
         id: i32,
     },
+    UpdateRule { 
+        #[clap(long)] id: i32, // L'ID est obligatoire pour savoir quoi modifier
+        #[clap(long)] name: String,     
+        #[clap(long)] source_ip: String,
+        #[clap(long)] dest_ip: String,
+        #[clap(long, default_value = "*")] source_port: String,
+        #[clap(long, default_value = "*")] dest_port: String,
+        #[clap(long)] action: String,
+        #[clap(long, default_value = "any")] protocol: String,
+    },
+    TrafficStats {
+    /// Période d'analyse : "5m", "1h", "4h", "24h", "1w" ou "all"
+        #[clap(default_value = "all")]
+        range: String,
+    },
+    Logs,
+
 }
 
 async fn handle_get_status(client: &mut FirewallServiceClient<tonic::transport::Channel>) -> anyhow::Result<()> {
@@ -70,12 +93,13 @@ async fn handle_list_rules(client: &mut FirewallServiceClient<tonic::transport::
         println!("Aucune règle active trouvée.");
     } else {
         println!("Règles actives du firewall :");
-        println!("{:<5} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
-                 "ID", "Source IP", "Dest IP", "Src Port", "Dest Port", "Action", "Proto", "Hits");
+        println!("{:<5} | {:<20} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
+                 "ID", "Name","Source IP", "Dest IP", "Src Port", "Dest Port", "Action", "Proto", "Hits");
         println!("{}", "-".repeat(100)); // Séparateur
         for rule in response.rules {
-            println!("{:<5} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
+            println!("{:<5} | {:<20} | {:<18} | {:<18} | {:<10} | {:<10} | {:<8} | {:<8} | {:<5}",
                      rule.id,
+                     rule.name,
                      rule.source_ip,
                      rule.dest_ip,
                      rule.source_port,
@@ -134,6 +158,75 @@ async fn handle_delete_rule(
     }
     Ok(())
 }
+async fn handle_update_rule(
+    client: &mut FirewallServiceClient<tonic::transport::Channel>,
+    id: i32,
+    rule_data: RuleData,
+) -> anyhow::Result<()> {
+    let request_payload = UpdateRuleRequest {
+        id,
+        rule: Some(rule_data),
+    };
+    let request = tonic::Request::new(request_payload);
+
+    let response = client.update_rule(request).await?.into_inner();
+
+    if response.success {
+        println!("Succès : {}", response.message);
+    } else {
+        println!("Échec : {}", response.message);
+    }
+    Ok(())
+}
+
+async fn handle_get_stats(client: &mut FirewallServiceClient<tonic::transport::Channel>,
+range_arg: String
+) -> anyhow::Result<()> {
+    // On peut laisser time_range vide pour l'instant
+    let request = tonic::Request::new(firewall::GetTrafficStatsRequest {
+        time_range: range_arg,
+    });
+
+    let response = client.get_traffic_stats(request).await?.into_inner();
+
+    println!("\n  STATISTIQUES DU TRAFIC RÉSEAU");
+    println!("-----------------------------------");
+    println!("Période : {}", response.time_period);
+    println!("-----------------------------------");
+    // Formatage avec des séparateurs de milliers pour la lisibilité (optionnel mais sympa)
+    println!("  Total Entrant (Inbound)  : {:>10} paquets", response.total_inbound);
+    println!("  Total Sortant (Outbound) : {:>10} paquets", response.total_outbound);
+    println!("  Total Bloqué (Blocked)   : {:>10} paquets", response.total_blocked);
+    println!("-----------------------------------");
+    
+    // Petit calcul de pourcentage de blocage
+    let total = response.total_inbound + response.total_blocked; // Approx (selon logique eBPF)
+    if total > 0 {
+        let percent = (response.total_blocked as f64 / total as f64) * 100.0;
+        println!("🛡️  Ratio de blocage         : {:>10.2} %", percent);
+    }
+    println!();
+
+    Ok(())
+}
+
+
+async fn handle_watch_logs(client: &mut FirewallServiceClient<Channel>) -> anyhow::Result<()> {
+    println!("🔌 Connexion au flux de logs du firewall... (Ctrl-C pour quitter)");
+
+    let request = tonic::Request::new(Empty {});
+    // On récupère le flux (stream)
+    let mut stream = client.watch_logs(request).await?.into_inner();
+
+    // Boucle infinie tant que le serveur envoie des données
+    while let Some(log) = stream.message().await? {
+        // Tu peux ajouter des couleurs ici selon le "level" si tu veux
+        println!("[{}] [{}] {}", log.timestamp, log.level, log.message);
+    }
+
+    println!("❌ Le flux a été coupé par le serveur.");
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
@@ -154,6 +247,7 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
             handle_list_rules(&mut client).await?;
         }
         Commands::CreateRule { // Variante de l'enum
+            name,
             source_ip,         // Déstructuration des champs nommés
             dest_ip,
             source_port,
@@ -164,6 +258,7 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
             // Le compilateur va vous dire que RuleData n'est pas trouvé ici ensuite
             // car il n'est pas importé.
             let rule_data = firewall::RuleData { // <--- Préciser firewall::RuleData
+                name,
                 source_ip,
                 dest_ip,
                 source_port,
@@ -175,7 +270,19 @@ async fn main() -> anyhow::Result<()> { // Utilisation de anyhow::Result
         }
         Commands::DeleteRule { id } => { // Gérer la nouvelle commande
             handle_delete_rule(&mut client, id).await?;
-        }
+        },
+        Commands::UpdateRule { id, name, source_ip, dest_ip, source_port, dest_port, action, protocol } => {
+            let rule_data = firewall::RuleData {
+                name, source_ip, dest_ip, source_port, dest_port, action, protocol,
+            };
+            handle_update_rule(&mut client, id, rule_data).await?;
+        },
+        Commands::TrafficStats { range } => {
+        handle_get_stats(&mut client, range).await?;
+        },
+        Commands::Logs => {
+            handle_watch_logs(&mut client).await?;
+        },
     }
 
     Ok(())

@@ -29,8 +29,7 @@ prost-types = "0.12.6"
 
 
 [build-dependencies]
-#aya-build = { git = "https://github.com/aya-rs/aya" }
-aya-build = "=0.1.2"
+aya-build = { git = "https://github.com/aya-rs/aya" }
 anyhow = "1"
 # TODO(https://github.com/rust-lang/cargo/issues/12375): this should be an artifact dependency, but
 # it's not possible to tell cargo to use `-Z build-std` to build it. We cargo-in-cargo in the build

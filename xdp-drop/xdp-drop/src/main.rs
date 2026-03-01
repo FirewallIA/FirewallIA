@@ -36,8 +36,10 @@ use crate::google::protobuf::Empty;
 
 #[derive(Debug, Parser)]
 struct Opt {
-    #[clap(short = 'i', long = "int")]
-    iface: String,
+    // #[clap(short = 'i', long = "int")]
+    //iface: String,
+    #[clap(short = 'i', long = "int", action = clap::ArgAction::Append, required = true)]
+    iface: Vec<String>,
 }
 
 // utilitaire pour convertir le protocole
@@ -55,9 +57,9 @@ fn protocol_to_u8(protocol_str: &Option<String>) -> u8 {
 }
 
 fn validate_args(opt: &Opt) {
-    if opt.iface.trim().is_empty() {
+    if opt.iface.is_empty() {
         let mut cmd = Opt::command();
-        eprintln!("Erreur : l'interface réseau est requise.\n");
+        eprintln!("Erreur : au moins une interface réseau est requise.\n");
         cmd.print_help().unwrap();
         std::process::exit(1);
     }
@@ -514,12 +516,27 @@ async fn main() -> Result<(), anyhow::Error> {
     let _ = EbpfLogger::init(&mut bpf);
 
     let program: &mut Xdp = bpf
+<<<<<<< Updated upstream
         .program_mut("xdp_firewall")
         .ok_or_else(|| anyhow::anyhow!("Programme eBPF 'xdp_firewall' introuvable"))?
         .try_into()?;
     program.load()?;
     program.attach(&opt.iface, XdpFlags::default())?;
     info!("eBPF program loaded and attached to {}.", opt.iface);
+=======
+        .program_mut("xdp_firewall") // Ceci retourne Option<&mut Program>
+        .ok_or_else(|| anyhow::anyhow!("Programme eBPF 'xdp_firewall' introuvable dans BPF"))? // Convertit Option en Result
+        .try_into() // try_into sur Program retourne Result<&mut Xdp, _>
+        .context("Erreur de conversion du programme en Xdp")?;
+    
+    program.load().context("Erreur de chargement du programme XDP")?; // load retourne Result
+    for iface in &opt.iface {
+        program
+            .attach(iface, XdpFlags::default())
+            .context(format!("Erreur d'attachement du programme XDP à l'interface {}", iface))?;
+        info!("eBPF program loaded and attached to {}.", iface);
+    }
+>>>>>>> Stashed changes
 
     // Récupération de la map
     let map = bpf

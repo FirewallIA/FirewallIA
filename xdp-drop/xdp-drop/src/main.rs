@@ -86,6 +86,33 @@ fn get_proto_name(proto: u32) -> String {
     }
 }
 
+fn get_interfaces(target: &str) -> Vec<String> {
+    let target = target.trim();
+    
+    // Si l'utilisateur a tapé "*" ou "all"
+    if target == "*" || target.to_lowercase() == "all" {
+        let mut ifaces = Vec::new();
+        // On lit le dossier système Linux qui contient les interfaces réseau
+        if let Ok(entries) = std::fs::read_dir("/sys/class/net") {
+            for entry in entries.flatten() {
+                if let Ok(name) = entry.file_name().into_string() {
+                    // On ignore généralement 'lo' (loopback) pour un firewall
+                    if name != "lo" {
+                        ifaces.push(name);
+                    }
+                }
+            }
+        }
+        return ifaces;
+    }
+    
+    // Sinon, on sépare par des virgules
+    target.split(',')
+          .map(|s| s.trim().to_string())
+          .filter(|s| !s.is_empty())
+          .collect()
+}
+
 fn validate_args(opt: &Opt) {
     if opt.iface.trim().is_empty() {
         let mut cmd = Opt::command();
@@ -532,8 +559,29 @@ async fn main() -> Result<(), anyhow::Error> {
     let program: &mut Xdp = bpf.program_mut("xdp_firewall")
         .ok_or_else(|| anyhow::anyhow!("Programme eBPF 'xdp_firewall' introuvable"))?.try_into()?;
     program.load()?;
-    program.attach(&opt.iface, XdpFlags::default())?;
-    info!("eBPF attaché à {}.", opt.iface);
+
+    // --- NOUVELLE LOGIQUE D'ATTACHEMENT MULTIPLE ---
+    let interfaces = get_interfaces(&opt.iface);
+    if interfaces.is_empty() {
+        return Err(anyhow::anyhow!("Aucune interface réseau trouvée ou spécifiée."));
+    }
+
+    let mut attached_count = 0;
+    for iface in &interfaces {
+        match program.attach(iface, XdpFlags::default()) {
+            Ok(_) => {
+                info!(" eBPF attaché avec succès à l'interface {}.", iface);
+                attached_count += 1;
+            }
+            Err(e) => {
+                warn!("Impossible d'attacher eBPF à l'interface {} : {}", iface, e);
+            }
+        }
+    }
+
+    if attached_count == 0 {
+        return Err(anyhow::anyhow!("Impossible d'attacher le programme eBPF. (Vérifiez les noms des interfaces)"));
+    }
 
     let map = bpf.take_map("BLOCKLIST").ok_or_else(|| anyhow::anyhow!("Map BLOCKLIST manquante"))?;
     let blocklist_map: HashMap<aya::maps::MapData, IpPort, u32> = HashMap::try_from(map)?;

@@ -55,7 +55,7 @@ enum Commands {
         protocol: String,
     },
     DeleteRule { // Nouvelle sous-commande
-        #[clap(long)]
+        #[clap(long, allow_hyphen_values = true)]
         id: i32,
     },
     UpdateRule { 

@@ -35,7 +35,7 @@ mod tests {
             protocol: String,
         },
         DeleteRule {
-            #[clap(long)]
+            #[clap(long, allow_hyphen_values = true)]
             id: i32,
         },
         TrafficStats {
@@ -289,6 +289,8 @@ mod tests {
             if port == "*" {
                 return true;
             }
+            
+            // Cas d'une plage de ports (ex: "8000-9000")
             if port.contains('-') {
                 let parts: Vec<&str> = port.split('-').collect();
                 if parts.len() != 2 {
@@ -296,9 +298,19 @@ mod tests {
                 }
                 let start = parts[0].parse::<u16>();
                 let end = parts[1].parse::<u16>();
-                return start.is_ok() && end.is_ok() && start.unwrap() <= end.unwrap();
+                
+                // On vérifie que ça parse ET que start > 0 ET que start <= end
+                return start.is_ok() 
+                    && end.is_ok() 
+                    && start.unwrap() > 0 
+                    && start.unwrap() <= end.unwrap();
             }
-            port.parse::<u16>().is_ok()
+            
+            // Cas d'un port unique
+            match port.parse::<u16>() {
+                Ok(p) => p > 0, // Retourne true seulement si le port est > 0
+                Err(_) => false,
+            }
         }
         
         #[test]

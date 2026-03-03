@@ -296,19 +296,18 @@ mod tests {
                 if parts.len() != 2 {
                     return false;
                 }
-                let start = parts[0].parse::<u16>();
-                let end = parts[1].parse::<u16>();
                 
-                // On vérifie que ça parse ET que start > 0 ET que start <= end
-                return start.is_ok() 
-                    && end.is_ok() 
-                    && start.unwrap() > 0 
-                    && start.unwrap() <= end.unwrap();
+                // On tente de parser les deux. Si les DEUX sont Ok(s) et Ok(e), on rentre dans le if.
+                if let (Ok(start), Ok(end)) = (parts[0].parse::<u16>(), parts[1].parse::<u16>()) {
+                    return start > 0 && start <= end;
+                }
+                
+                return false;
             }
             
             // Cas d'un port unique
             match port.parse::<u16>() {
-                Ok(p) => p > 0, // Retourne true seulement si le port est > 0
+                Ok(p) => p > 0,
                 Err(_) => false,
             }
         }

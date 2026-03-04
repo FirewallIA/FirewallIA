@@ -594,9 +594,9 @@ async fn main() -> Result<(), anyhow::Error> {
     tokio::spawn(async move { let _ = connection.await; });
 
     let initial_rules = pg_client.query("SELECT id, name, source_ip, dest_ip, dest_port, action, protocol FROM rules", &[]).await?;
-    for row in initial_rules {
-        let ip_src = if row.get::<_, String>("source_ip").to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { row.get::<_, String>("source_ip").parse().unwrap() };
-        let ip_dst = if row.get::<_, String>("dest_ip").to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { row.get::<_, String>("dest_ip").parse().unwrap() };
+for row in initial_rules {
+    let ip_src = if row.get::<_, String>("source_ip").to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { row.get::<_, String>("source_ip").parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
+    let ip_dst = if row.get::<_, String>("dest_ip").to_lowercase() == "any" { Ipv4Addr::UNSPECIFIED } else { row.get::<_, String>("dest_ip").parse().unwrap_or(Ipv4Addr::UNSPECIFIED) };
         
         let key = IpPort {
             addr: u32::from(ip_src).to_be(),

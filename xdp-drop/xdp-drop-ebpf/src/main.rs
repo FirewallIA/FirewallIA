@@ -103,133 +103,86 @@ fn try_xdp_firewall(ctx: XdpContext) -> Result<u32, ()> {
         _ => (0, 0),
     };
 
-    // --- LOGIQUE DE FILTRAGE ---
-    // J'ai remplacé TOUS les info! par log_event pour que vous voyiez tout dans le gRPC.
+    // --- LOGIQUE AJOUTÉE : TEST ALLER / RETOUR ---
+    let key_as_dest = IpPort { 
+        addr: source_ip_be, 
+        addr_dest: dest_ip_be, 
+        port: dest_port_be, 
+        protocol: protocol as u8, 
+        _pad: 0 
+    };
+    
+    let key_as_src = IpPort { 
+        addr: dest_ip_be, 
+        addr_dest: source_ip_be, 
+        port: source_port_be, 
+        protocol: protocol as u8, 
+        _pad: 0 
+    };
+
+    if let Some(action) = check_firewall_rule(&key_as_dest).or(check_firewall_rule(&key_as_src)) {
+        log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
+        return Ok(verdict(action, source_ip_be, dest_ip_be));
+    }
+    // ---------------------------------------------
 
     // 1. (exact src, exact dest) - port exact
-    let key_exact = IpPort {
-        addr: source_ip_be, addr_dest: dest_ip_be, port: dest_port_be, protocol: protocol as u8, _pad: 0,
-    };
+    let key_exact = IpPort { addr: source_ip_be, addr_dest: dest_ip_be, port: dest_port_be, protocol: protocol as u8, _pad: 0, };
     if let Some(action) = check_firewall_rule(&key_exact) {
         log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
     // 2. (exact src, exact dest) - port ANY
-    let key_exact_port_any = IpPort {
-        addr: source_ip_be, addr_dest: dest_ip_be, port: 0, protocol: protocol as u8, _pad: 0,
-    };
+    let key_exact_port_any = IpPort { addr: source_ip_be, addr_dest: dest_ip_be, port: 0, protocol: protocol as u8, _pad: 0, };
     if let Some(action) = check_firewall_rule(&key_exact_port_any) {
         log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
     // 3. (src, ANY dest) - port exact
-    let key_src_anydest = IpPort {
-        addr: source_ip_be, addr_dest: IP_ANY_BE, port: dest_port_be, protocol: protocol as u8, _pad: 0,
-    };
+    let key_src_anydest = IpPort { addr: source_ip_be, addr_dest: IP_ANY_BE, port: dest_port_be, protocol: protocol as u8, _pad: 0, };
     if let Some(action) = check_firewall_rule(&key_src_anydest) {
         log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
     // 4. (src, ANY dest) - port ANY
-    let key_src_anydest_port_any = IpPort {
-        addr: source_ip_be, addr_dest: IP_ANY_BE, port: 0, protocol: protocol as u8, _pad: 0,
-    };
+    let key_src_anydest_port_any = IpPort { addr: source_ip_be, addr_dest: IP_ANY_BE, port: 0, protocol: protocol as u8, _pad: 0, };
     if let Some(action) = check_firewall_rule(&key_src_anydest_port_any) {
         log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
        return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
     // 5. (ANY src, dest) - port exact
-    let key_anysrc_dest = IpPort {
-        addr: IP_ANY_BE, addr_dest: dest_ip_be, port: dest_port_be, protocol: protocol as u8, _pad: 0,
-    };
+    let key_anysrc_dest = IpPort { addr: IP_ANY_BE, addr_dest: dest_ip_be, port: dest_port_be, protocol: protocol as u8, _pad: 0, };
     if let Some(action) = check_firewall_rule(&key_anysrc_dest) {
         log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
     
-    // TRAFIC RETOUR (Port Source)
-    let key_check_source_port = IpPort {
-        addr: IP_ANY_BE, addr_dest: IP_ANY_BE, port: source_port_be, protocol: protocol as u8, _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_check_source_port) {
-        log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
-        return Ok(verdict(action, source_ip_be, dest_ip_be));
-    }
-
-    let key_check_source_port_any = IpPort {
-        addr: IP_ANY_BE, 
-        addr_dest: IP_ANY_BE, 
-        port: source_port_be, 
-        protocol: PROTO_ANY, // <--- On vérifie si une règle ANY autorise ce port source
-        _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_check_source_port_any) {
-        log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
-        return Ok(verdict(action, source_ip_be, dest_ip_be));
-    }
-
     // 6. (ANY src, dest) - port ANY
-    let key_anysrc_dest_port_any = IpPort {
-        addr: IP_ANY_BE, addr_dest: dest_ip_be, port: 0, protocol: protocol as u8, _pad: 0,
-    };
+    let key_anysrc_dest_port_any = IpPort { addr: IP_ANY_BE, addr_dest: dest_ip_be, port: 0, protocol: protocol as u8, _pad: 0, };
     if let Some(action) = check_firewall_rule(&key_anysrc_dest_port_any) {
         log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
     // 7. (ANY src, ANY dest) - port exact
-    let key_any_any = IpPort {
-        addr: IP_ANY_BE, addr_dest: IP_ANY_BE, port: dest_port_be, protocol: protocol as u8, _pad: 0,
-    };
+    let key_any_any = IpPort { addr: IP_ANY_BE, addr_dest: IP_ANY_BE, port: dest_port_be, protocol: protocol as u8, _pad: 0, };
     if let Some(action) = check_firewall_rule(&key_any_any) {
         log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
-    let key_any_any_proto_any = IpPort {
-        addr: IP_ANY_BE, 
-        addr_dest: IP_ANY_BE, 
-        port: dest_port_be, 
-        protocol: PROTO_ANY, // On force la recherche sur le proto 0
-        _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_any_any_proto_any) {
-        log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
-        return Ok(verdict(action, source_ip_be, dest_ip_be));
-    }
-
-
     // 8. (ANY src, ANY dest) - port ANY (Proto exact)
-    let key_any_any_port_any = IpPort {
-        addr: IP_ANY_BE, addr_dest: IP_ANY_BE, port: 0, protocol: protocol as u8, _pad: 0,
-    };
+    let key_any_any_port_any = IpPort { addr: IP_ANY_BE, addr_dest: IP_ANY_BE, port: 0, protocol: protocol as u8, _pad: 0, };
     if let Some(action) = check_firewall_rule(&key_any_any_port_any) {
         log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
         return Ok(verdict(action, source_ip_be, dest_ip_be));
     }
 
-    // ---------- Protocol = ANY checks (PROTO_ANY) ----------
-
-    // (ANY src, ANY dest) - port ANY - proto ANY
-    // C'EST ICI QUE SE JOUE VOTRE RÈGLE "BLOCK ALL"
-    let key_any_any_anyproto_port_any = IpPort {
-        addr: IP_ANY_BE,
-        addr_dest: IP_ANY_BE,
-        port: 0,
-        protocol: PROTO_ANY,
-        _pad: 0,
-    };
-    if let Some(action) = check_firewall_rule(&key_any_any_anyproto_port_any) {
-        // CORRECTION : Plus de info!(), on envoie les vraies IPs au userspace
-        log_event(&ctx, source_ip_be, dest_ip_be, u16::from_be(source_port_be), u16::from_be(dest_port_be), protocol as u32, action);
-        return Ok(verdict(action, source_ip_be, dest_ip_be));
-    }
-
-    // Default PASS (Compteur Stats uniquement, pas de log pour éviter le spam si pas de règle)
+    // Default PASS
     let src_is_priv = is_private_ip(source_ip_be);
     let dst_is_priv = is_private_ip(dest_ip_be);
     if !src_is_priv && dst_is_priv { increment_stat(STAT_INBOUND); }
